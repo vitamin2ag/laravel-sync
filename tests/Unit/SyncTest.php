@@ -702,8 +702,12 @@ it('refuses to act on a backup folder whose parent backup_dir symlink was repoin
     File::ensureDirectoryExists("{$outside}/2026-07-24_134530");
 
     // Repoint the backup_dir symlink itself — the ancestor, not the listed folder's
-    // own leaf, which stays a real (non-symlink) directory throughout.
+    // own leaf, which stays a real (non-symlink) directory throughout. Both removal
+    // calls are attempted, suppressed: a directory-target symlink needs unlink() on
+    // POSIX but rmdir() on Windows (where it's materialized as a directory junction),
+    // and using the wrong one silently no-ops instead of failing loudly.
     @unlink($linkPath);
+    @rmdir($linkPath);
     @symlink($outside, $linkPath);
 
     try {
@@ -713,6 +717,7 @@ it('refuses to act on a backup folder whose parent backup_dir symlink was repoin
         Process::assertNothingRan();
     } finally {
         @unlink($linkPath);
+        @rmdir($linkPath);
         File::deleteDirectory($inside);
         File::deleteDirectory($outside);
     }
