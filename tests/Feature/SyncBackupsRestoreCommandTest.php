@@ -159,13 +159,21 @@ it('refuses to restore a backup folder that has been replaced by a symlink since
 
     $realBackup = BackupFolder::fromPath($backup->path, $backup->size);
     File::deleteDirectory($backup->path);
-    File::link(base_path(), $backup->path);
 
-    $result = resolve(Sync::class)->restoreBackup($realBackup, dry: false);
+    // Not `File::link()`: creating a symlink needs a privilege CI's Windows runners
+    // don't grant by default, so this skips (rather than failing for an unrelated
+    // reason) wherever the environment can't actually create one.
+    if (! @symlink(base_path(), $backup->path)) {
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
 
-    expect($result)->toBeFalse();
+    try {
+        $result = resolve(Sync::class)->restoreBackup($realBackup, dry: false);
 
-    Process::assertNothingRan();
+        expect($result)->toBeFalse();
 
-    File::delete($backup->path);
+        Process::assertNothingRan();
+    } finally {
+        @unlink($backup->path);
+    }
 });
