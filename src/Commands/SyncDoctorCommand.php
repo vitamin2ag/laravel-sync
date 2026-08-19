@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vitamin2\Sync\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process;
@@ -54,7 +55,8 @@ class SyncDoctorCommand extends Command
             return self::FAILURE;
         }
 
-        $localRsyncAvailable = $this->runWithTimeout(['rsync', '--version']);
+        $localRsync = $this->runWithTimeout(['rsync', '--version']);
+        $localRsyncAvailable = $localRsync?->successful();
         $rows = [['-', 'Local rsync', $this->resultLabel($localRsyncAvailable, 'not found on PATH')]];
         $healthy = $localRsyncAvailable === true;
 
@@ -108,7 +110,8 @@ class SyncDoctorCommand extends Command
             return ['rows' => [[$remote->name, 'SSH connection', 'skipped, local remote']], 'healthy' => true];
         }
 
-        $connected = $this->runWithTimeout((new ConnectionCommand($remote))->toArgs());
+        $connection = $this->runWithTimeout((new ConnectionCommand($remote))->toArgs());
+        $connected = $connection?->successful();
         $rows = [[$remote->name, 'SSH connection', $this->resultLabel($connected, 'see sync:test-connection')]];
 
         // Skip the remote rsync check entirely when the connection itself already
@@ -122,23 +125,34 @@ class SyncDoctorCommand extends Command
             return ['rows' => $rows, 'healthy' => false];
         }
 
-        $rsyncAvailable = $this->runWithTimeout((new RsyncAvailableCommand($remote))->toArgs());
-        $rows[] = [$remote->name, 'Remote rsync', $this->resultLabel($rsyncAvailable, 'not found on remote')];
+        $rsync = $this->runWithTimeout((new RsyncAvailableCommand($remote))->toArgs());
+        $rsyncAvailable = $rsync?->successful();
+
+        // `ssh` itself (not the remote command it ran) exits 255 specifically when the
+        // connection drops or fails mid-session — distinct from `command -v rsync`'s own
+        // exit code, which the just-succeeded connection check already proved reachable.
+        // Reporting that as "not found on remote" would misdiagnose a second, unrelated
+        // connection failure as a missing binary.
+        $rsyncFailureReason = $rsync?->exitCode() === 255 ? 'SSH connection failed unexpectedly' : 'not found on remote';
+        $rows[] = [$remote->name, 'Remote rsync', $this->resultLabel($rsyncAvailable, $rsyncFailureReason)];
 
         return ['rows' => $rows, 'healthy' => $rsyncAvailable === true];
     }
 
     /**
-     * Run a check (local or over SSH), bounded by `TIMEOUT_SECONDS`. Returns null
-     * (rather than false, which already means "the command failed") to keep a hang
-     * distinguishable in the reported result.
+     * Run a check (local or over SSH), bounded by `TIMEOUT_SECONDS`. Returns null on a
+     * timeout (rather than a failed `ProcessResult`) to keep a hang distinguishable in
+     * the reported result; returns the full `ProcessResult` otherwise (not just its
+     * `successful()` bool) so a caller can inspect the exit code for a more specific
+     * failure reason, e.g. distinguishing an `ssh`-level failure from the remote
+     * command's own.
      *
      * @param  list<string>  $args
      */
-    private function runWithTimeout(array $args): ?bool
+    private function runWithTimeout(array $args): ?ProcessResult
     {
         try {
-            return Process::timeout(self::TIMEOUT_SECONDS)->run($args)->successful();
+            return Process::timeout(self::TIMEOUT_SECONDS)->run($args);
         } catch (ProcessTimedOutException) {
             return null;
         }

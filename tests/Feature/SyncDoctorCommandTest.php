@@ -80,6 +80,21 @@ it('fails when rsync is missing on the remote', function () {
         ->assertFailed();
 });
 
+it('reports a distinct reason when the remote rsync check fails with ssh\'s own connection-failure exit code, instead of misdiagnosing it as a missing binary', function () {
+    // ssh (not the remote command it ran) exits 255 specifically when the connection
+    // itself drops or fails mid-session — distinct from "command -v rsync exited
+    // non-zero because rsync isn't installed". A second, unrelated connection failure
+    // right after the connection check already succeeded shouldn't be reported the
+    // same way as a genuinely missing binary.
+    Process::fake(fn ($process) => in_array('command -v rsync', $process->command, true)
+        ? Process::result(exitCode: 255)
+        : Process::result());
+
+    $this->artisan('sync:doctor', ['remote' => 'production'])
+        ->expectsOutputToContain('FAILED (SSH connection failed unexpectedly)')
+        ->assertFailed();
+});
+
 it('fails, rather than hanging, when the local rsync check times out', function () {
     Process::fake(function ($process) {
         if (in_array('--version', $process->command, true)) {
