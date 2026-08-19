@@ -26,6 +26,7 @@ A git-like artisan command to easily sync files and folders between environments
   - [Backup Directory](#backup-directory)
 - [Usage](#usage)
   - [Cleaning Up Backups](#cleaning-up-backups)
+  - [Restoring Backups](#restoring-backups)
   - [Testing a Connection](#testing-a-connection)
   - [Concurrency](#concurrency)
 - [Examples](#examples)
@@ -228,15 +229,16 @@ php artisan sync {push|pull} {remote} {recipe...} [options]
 | `sync:list` | Preview the origin, target, options, and port in a table, without syncing. |
 | `sync:commands` | Print the `rsync` commands that would be run, without syncing. |
 | `sync:backups-clean` | Delete backup folders created by a backed-up pull. |
+| `sync:backups-restore` | Restore a backup folder's contents back onto the project root. |
 | `sync:test-connection` | Test the SSH connection (and root path) for a remote. |
 
 | Option | Description |
 | --- | --- |
 | `-O`, `--option=*` | Override the default rsync options. Repeatable. |
-| `-D`, `--dry` | Perform a dry run, with real-time output. On `sync:backups-clean`, preview which backups would be deleted. |
+| `-D`, `--dry` | Perform a dry run, with real-time output. On `sync:backups-clean`, preview which backups would be deleted. On `sync:backups-restore`, preview what would be restored. |
 | `-A`, `--all` | Sync every configured recipe. On `sync:backups-clean`, delete every backup. |
 | `-B`, `--backup` | Back up local files to `backup_dir` before a real pull. |
-| `-F`, `--force` | `sync:backups-clean` only. Skip the confirmation prompt. |
+| `-F`, `--force` | `sync:backups-clean` and `sync:backups-restore` only. Skip the confirmation prompt. |
 | `-K`, `--keep=` | `sync:backups-clean` only. Keep the N newest backups, deleting the rest. |
 | `--older-than=` | `sync:backups-clean` only. Delete backups older than N days. |
 | `-v` | Show real-time output while syncing (progress, stats, ...). |
@@ -274,6 +276,16 @@ if they're also older than the cutoff. Combining either with `--all` is rejected
 selects every backup. `--older-than` is capped at 36500 days (~100 years) — comfortably beyond any real
 retention window, and refused outright rather than risking day-arithmetic overflow silently deleting
 everything instead of nothing.
+
+### Restoring Backups
+
+`sync:backups-restore` copies a backup folder's contents back onto your project root, undoing a backed-up
+pull. Pass the backup's name (`{backup}` argument) or omit it to pick one from an interactive list; add
+`--dry` to preview what would be restored (with real-time output) without touching anything, and `--force`
+to skip the confirmation prompt.
+
+Only overwrites files the backup actually captured — it doesn't delete anything created since the backup was
+taken. Run `php artisan sync:backups-clean` afterwards if you also want to remove the backup you just restored.
 
 ### Testing a Connection
 
@@ -326,6 +338,12 @@ php artisan sync:backups-clean --all --dry
 
 # Cron-safe cleanup: keep the 5 newest backups, delete anything else older than 30 days
 php artisan sync:backups-clean --keep=5 --older-than=30 --no-interaction
+
+# Restore a specific backup, skipping the confirmation prompt
+php artisan sync:backups-restore 2026-07-24_134530 --force
+
+# Preview what a restore would change, with real-time output
+php artisan sync:backups-restore 2026-07-24_134530 --dry
 ```
 
 ## Changelog
