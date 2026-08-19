@@ -14,7 +14,7 @@ push or pull files and folders between environments (e.g. local, staging, produc
 
 ## Primary Goal
 
-- apply the `vitamin2/laravel-sync` package's public API (config, `sync`, `sync:list`, `sync:commands`, `sync:backups-clean`, `sync:backups-restore`, `sync:test-connection`) in the smallest correct way
+- apply the `vitamin2/laravel-sync` package's public API (config, `sync`, `sync:list`, `sync:commands`, `sync:backups-clean`, `sync:backups-restore`, `sync:test-connection`, `sync:doctor`) in the smallest correct way
 
 ## Prerequisites
 
@@ -179,6 +179,18 @@ Authenticates to the remote over SSH and confirms its `root` exists, without syn
 misconfigured remote or broken SSH setup before a real sync fails partway through. A local remote (no
 `user`/`host`) reports success immediately, without opening any connection.
 
+### 12. Check readiness for a real sync (optional)
+
+```bash
+php artisan sync:doctor {remote?} [--all]
+```
+
+Reports a table checking: `rsync` installed locally, and — per remote — the SSH connection/`root` (the same
+check as step 11) and `rsync` installed on the remote. Omit `{remote}` to pick one interactively, or pass
+`--all` to check every configured remote at once. A local remote skips the SSH checks. Each SSH round trip is
+bounded to 10 seconds. Exits non-zero if any check fails — safe to use as a CI or pre-deploy gate, e.g.
+`php artisan sync:doctor --all --no-interaction`.
+
 ## Rules, References, and Templates
 
 Read before executing:
@@ -215,6 +227,9 @@ php artisan sync:backups-clean --keep=5 --older-than=30 --no-interaction
 
 # Check the SSH connection and root path for a remote before syncing
 php artisan sync:test-connection production
+
+# Check that rsync and SSH access are ready for a real sync, as a CI/pre-deploy gate
+php artisan sync:doctor --all --no-interaction
 ```
 
 ## Anti-patterns
