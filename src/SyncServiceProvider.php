@@ -10,6 +10,7 @@ use Vitamin2\Sync\Commands\SyncBackupsCleanCommand;
 use Vitamin2\Sync\Commands\SyncBackupsRestoreCommand;
 use Vitamin2\Sync\Commands\SyncCommand;
 use Vitamin2\Sync\Commands\SyncCommandsCommand;
+use Vitamin2\Sync\Commands\SyncDoctorCommand;
 use Vitamin2\Sync\Commands\SyncListCommand;
 use Vitamin2\Sync\Commands\SyncTestConnectionCommand;
 
@@ -40,6 +41,7 @@ class SyncServiceProvider extends ServiceProvider
             SyncBackupsCleanCommand::class,
             SyncBackupsRestoreCommand::class,
             SyncTestConnectionCommand::class,
+            SyncDoctorCommand::class,
         ]);
     }
 }
