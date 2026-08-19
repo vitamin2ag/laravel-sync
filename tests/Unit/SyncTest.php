@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Vitamin2\Sync\Data\Backup;
 use Vitamin2\Sync\Data\BackupFolder;
@@ -592,6 +593,51 @@ it('deletes a backup folder and reports success', function () {
 
     expect(resolve(Sync::class)->deleteBackup($folder))->toBeTrue()
         ->and(File::isDirectory($folder->path))->toBeFalse();
+});
+
+it('restores a backup folder onto the project root', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeTrue();
+
+    Process::assertRan(fn ($process) => in_array("{$folder->path}/", $process->command, true)
+        && in_array(base_path().'/', $process->command, true)
+        && ! in_array('--dry-run', $process->command, true));
+});
+
+it('restores a backup folder as a dry run, adding --dry-run', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: true))->toBeTrue();
+
+    Process::assertRan(fn ($process) => in_array('--dry-run', $process->command, true));
+});
+
+it('reports failure when the restore process fails', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake(fn () => Process::result(exitCode: 1));
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse();
+});
+
+it('refuses to restore a backup folder that has been replaced by a symlink since it was listed', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    File::deleteDirectory($folder->path);
+    File::link(base_path(), $folder->path);
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse();
+
+    Process::assertNothingRan();
+
+    File::delete($folder->path);
 });
 
 it('refuses to delete a backup folder that has been replaced by a symlink since it was listed', function () {

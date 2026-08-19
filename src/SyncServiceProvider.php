@@ -7,6 +7,7 @@ namespace Vitamin2\Sync;
 use Illuminate\Support\ServiceProvider;
 use Override;
 use Vitamin2\Sync\Commands\SyncBackupsCleanCommand;
+use Vitamin2\Sync\Commands\SyncBackupsRestoreCommand;
 use Vitamin2\Sync\Commands\SyncCommand;
 use Vitamin2\Sync\Commands\SyncCommandsCommand;
 use Vitamin2\Sync\Commands\SyncListCommand;
@@ -37,6 +38,7 @@ class SyncServiceProvider extends ServiceProvider
             SyncListCommand::class,
             SyncCommandsCommand::class,
             SyncBackupsCleanCommand::class,
+            SyncBackupsRestoreCommand::class,
             SyncTestConnectionCommand::class,
         ]);
     }
