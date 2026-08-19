@@ -45,7 +45,12 @@ class SyncBackupsRestoreCommand extends Command
         try {
             $backups = $sync->backups();
 
-            if ($backups->isEmpty()) {
+            // Only short-circuits when no backup was explicitly named: with a `backup`
+            // argument given, an empty list must still reach resolveBackup() below so it
+            // reports "unknown backup" — reporting "no backups found" (and exiting 0)
+            // instead would let e.g. `sync:backups-restore missing --no-interaction`
+            // silently "succeed" against a typo'd or already-deleted backup name.
+            if ($backups->isEmpty() && ! $this->hasExplicitBackupArgument()) {
                 $this->info(sprintf('No backups found in "%s".', $sync->backupDir()));
 
                 return self::SUCCESS;
@@ -80,6 +85,18 @@ class SyncBackupsRestoreCommand extends Command
             : sprintf('Restored backup "%s" onto the project root.', $backup->name));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Whether the `backup` argument was given as a non-empty string — an explicit,
+     * validatable request, as opposed to it being omitted (which `handle()` treats as
+     * "let me pick from what's available" rather than "I asked for a specific backup").
+     */
+    private function hasExplicitBackupArgument(): bool
+    {
+        $name = $this->argument('backup');
+
+        return is_string($name) && $name !== '';
     }
 
     /**

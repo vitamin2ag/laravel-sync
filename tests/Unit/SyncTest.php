@@ -675,6 +675,49 @@ it('refuses to delete a backup folder that has been replaced by a symlink since 
     }
 });
 
+it('refuses to act on a backup folder whose parent backup_dir symlink was repointed outside the project since it was listed', function () {
+    // guardBackupDirSafe() explicitly allows backup_dir to be a symlink, as long as it
+    // resolves inside the project when validated (at listing time, inside backups()).
+    // If that symlink is later repointed outside the project, the *leaf* backup folder
+    // it now resolves through can still be a perfectly real directory — is_link() on
+    // the leaf alone can't catch this, only a real-path containment check against the
+    // project root can.
+    $inside = "{$this->backupPath}-inside";
+    File::ensureDirectoryExists("{$inside}/2026-07-24_134530");
+
+    $linkDir = 'sync-backups-symlink-'.Str::random(8);
+    $linkPath = base_path($linkDir);
+
+    if (! @symlink($inside, $linkPath)) {
+        File::deleteDirectory($inside);
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    config(['sync.backup_dir' => $linkDir]);
+    Process::fake();
+
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    $outside = sys_get_temp_dir().'/sync-outside-'.Str::random(8);
+    File::ensureDirectoryExists("{$outside}/2026-07-24_134530");
+
+    // Repoint the backup_dir symlink itself — the ancestor, not the listed folder's
+    // own leaf, which stays a real (non-symlink) directory throughout.
+    @unlink($linkPath);
+    @symlink($outside, $linkPath);
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse()
+            ->and(resolve(Sync::class)->deleteBackup($folder))->toBeFalse();
+
+        Process::assertNothingRan();
+    } finally {
+        @unlink($linkPath);
+        File::deleteDirectory($inside);
+        File::deleteDirectory($outside);
+    }
+});
+
 it('reports failure when a backup folder survives its own delete attempt', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
     $folder = resolve(Sync::class)->backups()->sole();

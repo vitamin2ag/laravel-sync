@@ -145,9 +145,10 @@ class Sync
     /**
      * Delete a single backup folder, reporting whether it actually succeeded.
      *
-     * Re-checks for a symlink swap immediately before deleting (see
-     * `hasBeenReplacedBySymlink()`) — without it, `File::deleteDirectory()` would follow
-     * one and delete the *target*'s contents instead of a real backup folder.
+     * Re-checks the folder is still safe to act on immediately before deleting (see
+     * `isUnsafeToActOn()`) — without it, `File::deleteDirectory()` would follow a symlink
+     * (at the leaf or an ancestor) and delete whatever it now points at instead of a real
+     * backup folder.
      *
      * `File::deleteDirectory()`'s own return value isn't trustworthy: it reports success
      * once the top-level directory existed, even when an individual file inside failed to
@@ -156,7 +157,7 @@ class Sync
      */
     public function deleteBackup(BackupFolder $folder): bool
     {
-        if ($this->hasBeenReplacedBySymlink($folder)) {
+        if ($this->isUnsafeToActOn($folder)) {
             return false;
         }
 
@@ -173,7 +174,7 @@ class Sync
      */
     public function restoreBackup(BackupFolder $folder, bool $dry, ?Closure $onOutput = null): bool
     {
-        if ($this->hasBeenReplacedBySymlink($folder)) {
+        if ($this->isUnsafeToActOn($folder)) {
             return false;
         }
 
@@ -181,18 +182,37 @@ class Sync
     }
 
     /**
-     * Whether a backup folder has been replaced by a symlink since `backups()` listed it,
-     * even though that listing already excludes symlinks. Shared by `deleteBackup()` and
-     * `restoreBackup()`: both have an interactive flow (a `multiselect()`/`select()` plus
-     * a `confirm()` prompt) between listing and acting — an arbitrarily long, user-paced
-     * window during which the folder could have been swapped for a symlink (a concurrent
-     * process, or a race). Without this re-check, `File::deleteDirectory()`/`rsync` would
-     * follow it and act on whatever it points at instead of a real backup folder — the
-     * exact class of bug `backups()`'s own listing-time filter exists to prevent.
+     * Whether a backup folder is no longer safe to delete or restore, re-checked
+     * immediately before acting. Shared by `deleteBackup()` and `restoreBackup()`: both
+     * have an interactive flow (a `multiselect()`/`select()` plus a `confirm()` prompt)
+     * between listing and acting — an arbitrarily long, user-paced window during which
+     * the folder could have changed (a concurrent process, or a race).
+     *
+     * Two independent checks, not one:
+     *
+     * - `is_link()` on the folder itself: catches the *leaf* being swapped for a symlink
+     *   since listing, regardless of what it now points at — `backups()`'s own
+     *   listing-time filter already excludes symlinks, so any leaf symlink here is new.
+     * - Real-path containment against the project root: `backup_dir` itself is allowed
+     *   to be a symlink (see `guardBackupDirSafe()`), validated only at listing time —
+     *   catches that *ancestor* symlink being repointed outside the project afterward,
+     *   which `is_link()` on the leaf alone can't see (the leaf can be a perfectly real
+     *   directory at the *new*, now-external location `backup_dir` resolves to).
+     *
+     * Mirrors `guardBackupDirNotEscapingRootOnDisk()`'s same real-path check for
+     * `backup_dir` itself; unlike that guard, no "walk up to the nearest existing
+     * ancestor" is needed here, since the folder is already known to exist.
      */
-    private function hasBeenReplacedBySymlink(BackupFolder $folder): bool
+    private function isUnsafeToActOn(BackupFolder $folder): bool
     {
-        return is_link($folder->path);
+        if (is_link($folder->path)) {
+            return true;
+        }
+
+        $normalizedReal = $this->normalizeRealpath(realpath($folder->path));
+        $normalizedRoot = $this->normalizeRealpath(realpath(base_path()));
+
+        return $normalizedReal === null || $normalizedRoot === null || ! $this->isPathWithin($normalizedReal, $normalizedRoot);
     }
 
     /**

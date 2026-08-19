@@ -43,6 +43,17 @@ it('restores the given backup by name, with --no-interaction skipping both the a
         && in_array(base_path().'/', $process->command, true));
 });
 
+it('fails with a friendly error for an explicit backup name when the backup directory is empty, instead of silently succeeding', function () {
+    // The backup_dir being entirely empty must not shortcut past an explicitly named
+    // (and thus unknown) backup — a script running `sync:backups-restore missing
+    // --no-interaction` should see this failure, not a misleading exit code 0.
+    $this->artisan('sync:backups-restore', ['backup' => 'missing', '--no-interaction' => true])
+        ->expectsOutputToContain('The backup "missing" was not found.')
+        ->assertFailed();
+
+    Process::assertNothingRan();
+});
+
 it('fails with a friendly error for an unknown backup name', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
 
