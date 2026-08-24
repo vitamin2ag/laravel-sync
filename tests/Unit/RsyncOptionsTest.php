@@ -125,3 +125,27 @@ it('returns the same instance when there are no excludes', function () {
 
     expect($options->withExcludes([]))->toBe($options);
 });
+
+it('appends an --exclude-from flag per file, verbatim', function () {
+    // Resolution is Sync::resolveExcludesFromPath()'s job, so the guard and this flag can't
+    // disagree about which file is meant; these options just format what they are given.
+    $options = (new RsyncOptions(['--archive']))->withExcludeFrom(['/srv/app/.rsync-excludes', '/mnt/shared/other.txt']);
+
+    expect($options->flags)->toBe([
+        '--archive',
+        '--exclude-from=/srv/app/.rsync-excludes',
+        '--exclude-from=/mnt/shared/other.txt',
+    ]);
+});
+
+it('returns the same instance when there are no excludes-from files', function () {
+    $options = new RsyncOptions(['--archive']);
+
+    expect($options->withExcludeFrom([]))->toBe($options);
+});
+
+it('does not treat an --exclude-from flag as producing output', function () {
+    $options = (new RsyncOptions(['--archive']))->withExcludeFrom(['.rsync-excludes']);
+
+    expect($options->producesOutput())->toBeFalse();
+});

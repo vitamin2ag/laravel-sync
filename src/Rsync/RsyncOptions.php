@@ -143,13 +143,17 @@ final readonly class RsyncOptions implements Stringable
      * Whether any of the resolved flags produce visible output while syncing.
      *
      * Flags outside `AVAILABLE` are assumed to produce output rather than silently suppressing
-     * streaming; `--exclude=PATTERN` is exempted because its user-defined value keeps it out of
-     * `AVAILABLE` even though it's known to be silent.
+     * streaming; `--exclude=PATTERN` and `--exclude-from=FILE` are exempted because their
+     * user-defined values keep them out of `AVAILABLE` even though they're known to be silent.
      */
     public function producesOutput(): bool
     {
         foreach ($this->flags as $flag) {
             if (str_starts_with($flag, '--exclude=')) {
+                continue;
+            }
+
+            if (str_starts_with($flag, '--exclude-from=')) {
                 continue;
             }
 
@@ -170,14 +174,30 @@ final readonly class RsyncOptions implements Stringable
      */
     public function withExcludes(array $excludes): self
     {
-        if ($excludes === []) {
-            return $this;
-        }
+        return $this->withFlags(array_map(fn (string $pattern) => "--exclude={$pattern}", $excludes));
+    }
 
-        return new self([
-            ...$this->flags,
-            ...array_map(fn (string $pattern) => "--exclude={$pattern}", $excludes),
-        ]);
+    /**
+     * Return a copy of these options with a `--exclude-from=FILE` flag appended per file.
+     * Paths must already be absolute — `Sync::resolveExcludesFromPath()` owns that rule, and
+     * `rsync` reads an exclude-from file locally however the sync's working directory is set.
+     *
+     * @param  array<int, string>  $paths
+     */
+    public function withExcludeFrom(array $paths): self
+    {
+        return $this->withFlags(array_map(fn (string $path) => "--exclude-from={$path}", $paths));
+    }
+
+    /**
+     * Return a copy of these options with `$flags` appended. Returns `$this` itself when
+     * `$flags` is empty, not a value-identical copy — callers detect the no-op by identity.
+     *
+     * @param  array<int, string>  $flags
+     */
+    private function withFlags(array $flags): self
+    {
+        return $flags === [] ? $this : new self([...$this->flags, ...$flags]);
     }
 
     public function __toString(): string

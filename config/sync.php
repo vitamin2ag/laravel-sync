@@ -54,6 +54,20 @@ return [
     ],
 
     /*
+    | Excludes From
+    | Optional, keyed by recipe name. An array of file paths (relative to your project's
+    | root), each containing rsync exclude patterns (one per line), applied via rsync's
+    | own --exclude-from when that recipe is synced — useful for a long exclude list
+    | you'd rather keep in its own file than inline in this config. A relative path is
+    | resolved from your project's root; an absolute one is used as written.
+    */
+    'excludes_from' => [
+
+        // 'assets' => ['.rsync-excludes'],
+
+    ],
+
+    /*
     | Backup Directory
     | Relative to your project's root. Before a real pull, when backups are enabled
     | (--backup / -B), the local files of the selected recipes are copied into a

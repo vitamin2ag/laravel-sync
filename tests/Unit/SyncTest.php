@@ -94,6 +94,31 @@ it('resolves excludes for a recipe name containing a dot, without config() misre
     expect($recipe->excludes)->toBe(['*.tmp']);
 });
 
+it('hydrates a recipe\'s excludes-from files from the separate excludes_from config key, keyed by recipe name', function () {
+    config(['sync.excludes_from' => ['assets' => ['.rsync-excludes']]]);
+
+    $recipe = resolve(Sync::class)->recipes()->get('assets');
+
+    expect($recipe->excludesFrom)->toBe(['.rsync-excludes']);
+});
+
+it('defaults a recipe\'s excludes-from files to an empty array when none are configured for it', function () {
+    $recipe = resolve(Sync::class)->recipes()->get('assets');
+
+    expect($recipe->excludesFrom)->toBe([]);
+});
+
+it('resolves excludes-from files for a recipe name containing a dot, without config() misreading it as a nested path', function () {
+    config([
+        'sync.recipes' => ['assets.images' => ['storage/app/img/']],
+        'sync.excludes_from' => ['assets.images' => ['.rsync-excludes']],
+    ]);
+
+    $recipe = resolve(Sync::class)->recipes()->get('assets.images');
+
+    expect($recipe->excludesFrom)->toBe(['.rsync-excludes']);
+});
+
 it('resolves a single remote by name', function () {
     expect(resolve(Sync::class)->remote('staging'))->toBeInstanceOf(Remote::class);
 });
@@ -153,6 +178,151 @@ it('refuses to sync a path with itself even when the remote root only differs by
 
     $sync->prepare(Operation::Push, $sync->remote('here'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
 })->throws(SyncException::class);
+
+it('allows a recipe whose excludes-from file exists', function () {
+    $file = 'storage/app/.rsync-excludes-'.Str::random(8);
+    config(['sync.excludes_from' => ['assets' => [$file]]]);
+    File::put(base_path($file), '*.log');
+
+    try {
+        $sync = resolve(Sync::class);
+        $pending = $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+
+        expect($pending)->toBeInstanceOf(PendingSync::class);
+    } finally {
+        File::delete(base_path($file));
+    }
+});
+
+it('finds a recipe\'s excludes-from file even when configured with Windows-style backslash separators', function () {
+    // POSIX treats an unnormalized backslash path as one oddly-named segment, not a nested
+    // path, so the guard and the `--exclude-from=` flag must both normalize it to "/".
+    $name = '.rsync-excludes-'.Str::random(8);
+    config(['sync.excludes_from' => ['assets' => ['storage\\app\\'.$name]]]);
+    File::ensureDirectoryExists(base_path('storage/app'));
+    File::put(base_path("storage/app/{$name}"), '*.log');
+
+    try {
+        $sync = resolve(Sync::class);
+        $pending = $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+
+        expect($pending)->toBeInstanceOf(PendingSync::class);
+    } finally {
+        File::delete(base_path("storage/app/{$name}"));
+    }
+});
+
+it('allows a recipe\'s excludes-from file that is a symlink to a target outside the project', function () {
+    // A shared `storage` symlinked out of the release directory is standard on
+    // Envoyer-style deploys, so containment here would refuse an ordinary config value.
+    $target = sys_get_temp_dir().'/sync-excludes-shared-'.Str::random(8);
+    File::put($target, '*.log');
+
+    $file = 'storage/app/.rsync-excludes-'.Str::random(8);
+    $link = base_path($file);
+    File::ensureDirectoryExists(base_path('storage/app'));
+
+    if (! @symlink($target, $link)) {
+        File::delete($target);
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    config(['sync.excludes_from' => ['assets' => [$file]]]);
+
+    try {
+        $sync = resolve(Sync::class);
+        $pending = $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+
+        expect($pending)->toBeInstanceOf(PendingSync::class);
+    } finally {
+        @unlink($link);
+        File::delete($target);
+    }
+});
+
+it('refuses to prepare a sync when a recipe\'s excludes-from file does not exist', function () {
+    config(['sync.excludes_from' => ['assets' => ['storage/app/.rsync-excludes-missing']]]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+})->throws(
+    SyncException::class,
+    'The excludes_from file "storage/app/.rsync-excludes-missing" configured for recipe "assets" does not exist.',
+);
+
+it('allows a recipe\'s excludes-from file reached through a ".." segment', function () {
+    // Deliberately not confined to the project: a sibling checkout in a monorepo is a
+    // legitimate place to keep a shared exclude list.
+    $name = '.rsync-excludes-'.Str::random(8);
+    File::put(dirname(base_path()).'/'.$name, '*.log');
+
+    config(['sync.excludes_from' => ['assets' => ['../'.$name]]]);
+
+    try {
+        $sync = resolve(Sync::class);
+        $pending = $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+
+        expect($pending)->toBeInstanceOf(PendingSync::class);
+    } finally {
+        File::delete(dirname(base_path()).'/'.$name);
+    }
+});
+
+it('allows a recipe\'s excludes-from file configured as an absolute path', function () {
+    // `storage_path('app/.rsync-excludes')` in the config is idiomatic Laravel, and
+    // `base_path()` would silently rebase it into a nonexistent path.
+    $file = storage_path('app/.rsync-excludes-'.Str::random(8));
+    File::ensureDirectoryExists(storage_path('app'));
+    File::put($file, '*.log');
+
+    config(['sync.excludes_from' => ['assets' => [$file]]]);
+
+    try {
+        $sync = resolve(Sync::class);
+        $pending = $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+
+        // Separator-normalized, since storage_path() yields backslashes on Windows — rsync
+        // and PHP both accept "/" there, so the flag carries the normalized form.
+        $expected = str_replace('\\', '/', $file);
+
+        expect($pending->commands()->first()->toArgs())->toContain("--exclude-from={$expected}");
+    } finally {
+        File::delete($file);
+    }
+});
+
+it('rebases a relative excludes-from path that merely starts with a drive-letter-like prefix', function () {
+    // "x:rules" is a relative POSIX filename, not a Windows-absolute path — only "x:/..."
+    // (letter, colon, separator) is absolute. Must not be misread as absolute and skip
+    // rebasing under base_path().
+    expect(Sync::resolveExcludesFromPath('x:rules'))->toBe(base_path('x:rules'));
+});
+
+it('reports an absolute excludes-from file that does not exist without rebasing it', function () {
+    config(['sync.excludes_from' => ['assets' => ['/etc/.rsync-excludes-missing']]]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+})->throws(
+    SyncException::class,
+    'The excludes_from file "/etc/.rsync-excludes-missing" configured for recipe "assets" does not exist.',
+);
+
+it('only checks excludes-from files for the recipes being synced, not every configured recipe', function () {
+    config([
+        'sync.recipes' => [
+            'assets' => ['storage/app/assets/'],
+            'env' => ['.env'],
+        ],
+        'sync.excludes_from' => ['env' => ['storage/app/.rsync-excludes-missing']],
+    ]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->guardExcludesFromFilesExist(collect([$sync->recipe('assets')]));
+})->throwsNoExceptions();
 
 it('refuses to back up when the backup directory is the recipe path itself', function () {
     $sync = resolve(Sync::class);

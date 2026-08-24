@@ -42,6 +42,50 @@ it('appends a recipe\'s own excludes to that recipe\'s rsync commands', function
         ->and($commands['.env']->options->flags)->toBe(['--archive']);
 });
 
+it('appends a recipe\'s own excludes-from files to that recipe\'s rsync commands', function () {
+    $recipes = collect([
+        new Recipe('assets', ['storage/app/assets/'], [], ['.rsync-excludes']),
+        new Recipe('env', ['.env']),
+    ]);
+
+    $pending = new PendingSync(Operation::Push, $this->remote, $recipes, new RsyncOptions(['--archive']));
+    $commands = $pending->commands()->keyBy->path;
+
+    expect($commands['storage/app/assets/']->options->flags)->toBe([
+        '--archive', '--exclude-from='.base_path('.rsync-excludes'),
+    ])
+        ->and($commands['.env']->options->flags)->toBe(['--archive']);
+});
+
+it('merges excludes-from files from every recipe that shares a path', function () {
+    $recipes = collect([
+        new Recipe('assets', ['storage/app/assets/'], [], ['.rsync-excludes-a']),
+        new Recipe('assets-again', ['storage/app/assets/'], [], ['.rsync-excludes-b']),
+    ]);
+
+    $pending = new PendingSync(Operation::Push, $this->remote, $recipes, new RsyncOptions(['--archive']));
+
+    expect($pending->commands()->sole()->options->flags)->toBe([
+        '--archive',
+        '--exclude-from='.base_path('.rsync-excludes-a'),
+        '--exclude-from='.base_path('.rsync-excludes-b'),
+    ]);
+});
+
+it('does not apply recipe excludes-from files to the backup pass', function () {
+    $recipes = collect([new Recipe('assets', ['storage/app/assets/'], [], ['.rsync-excludes'])]);
+
+    $pending = new PendingSync(
+        Operation::Pull,
+        $this->remote,
+        $recipes,
+        new RsyncOptions(['--archive']),
+        new Backup('.sync-backups', '2026-07-24_134530'),
+    );
+
+    expect($pending->backups()->sole()->toArgs())->not->toContain('--exclude-from='.base_path('.rsync-excludes'));
+});
+
 it('handles a purely numeric recipe path without PHP coercing it to an array key', function () {
     // "123" is the shape PHP coerces to an int array key — the bug under test. Looked up
     // via firstWhere(), not keyBy(), which would hit that same coercion in the test itself.

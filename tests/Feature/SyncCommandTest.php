@@ -134,6 +134,30 @@ it('refuses to sync a path with itself', function () {
     Process::assertNothingRan();
 });
 
+it('fails with a friendly error when a recipe\'s excludes_from file does not exist', function () {
+    config(['sync.excludes_from' => ['assets' => ['storage/app/.rsync-excludes-missing']]]);
+
+    $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true])
+        ->expectsOutputToContain('The excludes_from file "storage/app/.rsync-excludes-missing" configured for recipe "assets" does not exist.')
+        ->assertFailed();
+
+    Process::assertNothingRan();
+});
+
+it('passes a recipe\'s excludes_from file to rsync as an absolute --exclude-from path', function () {
+    config(['sync.excludes_from' => ['assets' => ['storage/app/.rsync-excludes']]]);
+    File::put(base_path('storage/app/.rsync-excludes'), '*.log');
+
+    try {
+        $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true])
+            ->assertSuccessful();
+
+        Process::assertRan(fn ($process) => in_array('--exclude-from='.base_path('storage/app/.rsync-excludes'), $process->command, true));
+    } finally {
+        File::delete(base_path('storage/app/.rsync-excludes'));
+    }
+});
+
 it('refuses to push to a read-only remote', function () {
     $this->artisan('sync', ['operation' => 'push', 'remote' => 'production', 'recipe' => ['assets'], '--no-interaction' => true])
         ->expectsOutputToContain('The remote "production" is read-only and cannot be pushed to.')

@@ -162,4 +162,16 @@ class SyncException extends RuntimeException
             $remote,
         ));
     }
+
+    /**
+     * A recipe's configured `excludes_from` file doesn't exist on disk.
+     */
+    public static function excludesFromFileMissing(string $recipe, string $path): self
+    {
+        return new self(sprintf(
+            'The excludes_from file "%s" configured for recipe "%s" does not exist.',
+            $path,
+            $recipe,
+        ));
+    }
 }

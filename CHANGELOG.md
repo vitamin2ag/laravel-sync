@@ -3,6 +3,7 @@
 ## [Unreleased](https://github.com/vitamin2ag/laravel-sync/compare/v0.3.0...HEAD)
 
 - Add a concurrency guard: `sync` refuses to run when another `sync` is already in progress for the same remote
+- Add `excludes_from` config key: per-recipe rsync `--exclude-from` file support, alongside the existing inline `excludes`
 
 ## [v0.3.0](https://github.com/vitamin2ag/laravel-sync/compare/v0.2.0...v0.3.0) - 2026-08-19
 

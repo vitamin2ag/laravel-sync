@@ -31,7 +31,8 @@ composer require vitamin2/laravel-sync
 php artisan vendor:publish --tag="laravel-sync-config"
 ```
 
-This publishes `config/sync.php` with four keys: `remotes`, `recipes`, `options`, `backup_dir`.
+This publishes `config/sync.php` with six keys: `remotes`, `recipes`, `options`, `excludes`, `excludes_from`,
+`backup_dir`.
 
 ### 2. Define remotes
 
@@ -88,15 +89,29 @@ Keyed by recipe name. Appended as `rsync --exclude` flags only when that recipe 
 above — not applied to a `--backup` pass, which is a fixed, independent full copy. A path shared by more than
 one synced recipe gets the union of every one of those recipes' excludes.
 
-### 6. Set the backup directory (optional)
+### 6. Set per-recipe excludes-from files (optional)
+
+```php
+'excludes_from' => [
+    'assets' => ['.rsync-excludes'],
+],
+```
+
+Keyed by recipe name. Each entry is a file path containing rsync exclude patterns (one per line) — applied via
+`rsync --exclude-from` alongside (not instead of) `excludes` above. A relative path is resolved from the app's
+root; an absolute one (e.g. `storage_path('app/.rsync-excludes')`) is used as written. The file need not sit
+inside the project. A configured file that doesn't exist fails fast with a clear error before anything is
+synced.
+
+### 7. Set the backup directory (optional)
 
 ```php
 'backup_dir' => '.sync-backups',
 ```
 
-Relative to the app's root. Used when `--backup` is passed on a real pull (see step 7).
+Relative to the app's root. Used when `--backup` is passed on a real pull (see step 8).
 
-### 7. Run a sync
+### 8. Run a sync
 
 ```bash
 php artisan sync {push|pull} {remote} {recipe...} [options]
@@ -126,14 +141,14 @@ failure or a declined confirmation prompt.
 The lock is keyed by the remote's resolved target (`host:port` plus `root`, or just `root` when local), not by
 its config name, so two config entries aliasing the same physical directory still block each other.
 
-### 8. Preview before running (optional)
+### 9. Preview before running (optional)
 
 - `php artisan sync:list {push|pull} {remote} {recipe...}` — table of origin, target, options, and port
 - `php artisan sync:commands {push|pull} {remote} {recipe...}` — prints the exact `rsync` command(s) that would run
 
 Neither of these two commands syncs anything; they only resolve and display.
 
-### 9. Clean up old backups (optional)
+### 10. Clean up old backups (optional)
 
 ```bash
 php artisan sync:backups-clean
@@ -150,7 +165,7 @@ error instead of deleting anything — there's no picker to fall back to. The co
 when running interactively, so `--no-interaction --all` (or `--keep`/`--older-than`, e.g. in a scheduled task)
 deletes immediately without needing `--force`. `--keep`/`--older-than` cannot be combined with `--all`.
 
-### 10. Test a remote's connection (optional)
+### 11. Test a remote's connection (optional)
 
 ```bash
 php artisan sync:test-connection {remote}

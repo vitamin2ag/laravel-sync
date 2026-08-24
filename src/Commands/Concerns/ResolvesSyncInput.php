@@ -49,6 +49,7 @@ trait ResolvesSyncInput
             $recipes = $this->resolveRecipes();
 
             $sync->guardNotSamePath($remote, $recipes);
+            $sync->guardExcludesFromFilesExist($recipes);
 
             $backup = $this->resolveBackup($operation) ? $sync->startBackup($recipes) : null;
 

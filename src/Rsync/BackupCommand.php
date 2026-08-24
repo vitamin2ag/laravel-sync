@@ -30,12 +30,11 @@ final readonly class BackupCommand implements Arrayable, Stringable
     /**
      * The source path, kept relative so `--relative` recreates only the recipe path under
      * the backup folder. Requires the process to run from the project root (`PendingSync::run()`).
-     *
-     * Not the `/./` anchor on an absolute path: macOS's bundled openrsync ignores it and
-     * replicates the full absolute path, while relative-plus-working-directory works on both.
      */
     public function origin(): string
     {
+        // Not the `/./` anchor on an absolute path: macOS's bundled openrsync ignores it and
+        // replicates the full absolute path.
         return $this->path;
     }
 
