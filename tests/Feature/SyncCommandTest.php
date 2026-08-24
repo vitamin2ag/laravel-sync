@@ -134,6 +134,16 @@ it('refuses to sync a path with itself', function () {
     Process::assertNothingRan();
 });
 
+it('fails with a friendly error for an absolute recipe path', function () {
+    config(['sync.recipes' => ['assets' => ['/etc/passwd']]]);
+
+    $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true])
+        ->expectsOutputToContain('The path "/etc/passwd" in recipe "assets" is absolute. Recipe paths must be relative to the project root.')
+        ->assertFailed();
+
+    Process::assertNothingRan();
+});
+
 it('fails with a friendly error when a recipe\'s excludes_from file does not exist', function () {
     config(['sync.excludes_from' => ['assets' => ['storage/app/.rsync-excludes-missing']]]);
 

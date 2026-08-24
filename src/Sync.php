@@ -432,6 +432,7 @@ class Sync
     public function prepare(Operation $operation, Remote $remote, Collection $recipes, RsyncOptions $options, ?Backup $backup = null): PendingSync
     {
         $this->guardReadOnly($operation, $remote);
+        $this->guardRecipePathsAreRelative($recipes);
         $this->guardNotSamePath($remote, $recipes);
         $this->guardExcludesFromFilesExist($recipes);
 
@@ -452,6 +453,24 @@ class Sync
     {
         if ($operation === Operation::Push && $remote->readOnly) {
             throw SyncException::remoteIsReadOnly($remote->name);
+        }
+    }
+
+    /**
+     * Guard against an absolute recipe path. `base_path()` `ltrim()`s a leading separator
+     * via `join_paths()`, so an absolute path would otherwise be silently rebased under the
+     * project root instead of being used or refused.
+     *
+     * @param  Collection<int, Recipe>  $recipes
+     */
+    public function guardRecipePathsAreRelative(Collection $recipes): void
+    {
+        foreach ($recipes as $recipe) {
+            foreach ($recipe->paths as $path) {
+                if (self::isAbsolutePath(Recipe::normalizePathSeparators($path))) {
+                    throw SyncException::recipePathAbsolute($recipe->name, $path);
+                }
+            }
         }
     }
 

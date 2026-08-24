@@ -174,4 +174,17 @@ class SyncException extends RuntimeException
             $recipe,
         ));
     }
+
+    /**
+     * A recipe path is absolute. Unlike `excludes_from`, a recipe path is appended to
+     * both the local and remote root, so an absolute one has no sensible remote counterpart.
+     */
+    public static function recipePathAbsolute(string $recipe, string $path): self
+    {
+        return new self(sprintf(
+            'The path "%s" in recipe "%s" is absolute. Recipe paths must be relative to the project root.',
+            $path,
+            $recipe,
+        ));
+    }
 }

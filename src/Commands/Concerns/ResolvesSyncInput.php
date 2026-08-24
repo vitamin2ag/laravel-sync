@@ -48,6 +48,7 @@ trait ResolvesSyncInput
 
             $recipes = $this->resolveRecipes();
 
+            $sync->guardRecipePathsAreRelative($recipes);
             $sync->guardNotSamePath($remote, $recipes);
             $sync->guardExcludesFromFilesExist($recipes);
 
