@@ -295,11 +295,13 @@ class Sync
 
     /**
      * Whether an already-`/`-normalized path is absolute — a leading separator, or a Windows
-     * drive letter.
+     * drive-absolute path (`C:/...`). `C:foo` (no separator after the colon) is drive-relative,
+     * not absolute, and must not match — otherwise a POSIX relative path like `x:rules` is
+     * misread as absolute.
      */
     private static function isAbsolutePath(string $normalized): bool
     {
-        return $normalized !== '' && ($normalized[0] === '/' || preg_match('#^[A-Za-z]:#', $normalized) === 1);
+        return $normalized !== '' && ($normalized[0] === '/' || preg_match('#^[A-Za-z]:/#', $normalized) === 1);
     }
 
     /**

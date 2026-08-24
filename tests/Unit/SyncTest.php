@@ -292,6 +292,13 @@ it('allows a recipe\'s excludes-from file configured as an absolute path', funct
     }
 });
 
+it('rebases a relative excludes-from path that merely starts with a drive-letter-like prefix', function () {
+    // "x:rules" is a relative POSIX filename, not a Windows-absolute path — only "x:/..."
+    // (letter, colon, separator) is absolute. Must not be misread as absolute and skip
+    // rebasing under base_path().
+    expect(Sync::resolveExcludesFromPath('x:rules'))->toBe(base_path('x:rules'));
+});
+
 it('reports an absolute excludes-from file that does not exist without rebasing it', function () {
     config(['sync.excludes_from' => ['assets' => ['/etc/.rsync-excludes-missing']]]);
 
