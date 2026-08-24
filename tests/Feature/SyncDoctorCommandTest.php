@@ -46,6 +46,18 @@ it('fails and reports a friendly error when local rsync is missing', function ()
         ->assertFailed();
 });
 
+it('reports a distinct reason when local rsync is present but broken, instead of misdiagnosing it as missing', function () {
+    // Exit 127 is the shell's own "command not found" convention; any other nonzero
+    // code means rsync ran (or tried to) and failed for some other reason.
+    Process::fake(fn ($process) => in_array('--version', $process->command, true)
+        ? Process::result(exitCode: 1)
+        : Process::result());
+
+    $this->artisan('sync:doctor', ['remote' => 'production'])
+        ->expectsOutputToContain('FAILED (rsync check failed)')
+        ->assertFailed();
+});
+
 it('skips the SSH checks for a local remote, without spawning a process for it', function () {
     $this->artisan('sync:doctor', ['remote' => 'local'])
         ->expectsOutputToContain('skipped, local remote')
@@ -61,7 +73,7 @@ it('fails when the SSH connection or root check fails, skipping the now-unreacha
         : Process::result());
 
     $this->artisan('sync:doctor', ['remote' => 'production'])
-        ->expectsOutputToContain('FAILED (see sync:test-connection)')
+        ->expectsOutputToContain('FAILED (SSH connection failed)')
         ->assertFailed();
 
     // Local rsync (1) + SSH connection (1) only — the remote rsync check never runs,
@@ -130,6 +142,39 @@ it('reports a distinct timeout failure for the SSH connection check', function (
 
     // The remote rsync check never runs once the connection itself timed out.
     Process::assertNotRan(fn ($process) => in_array('command -v rsync', $process->command, true));
+});
+
+it('reports the remote rsync check as skipped due to a timeout, not a failure, when the connection timed out', function () {
+    // A separate test, not an extra assertion on the previous one: Laravel Prompts'
+    // table() renders as a single write, so only one expectsOutputToContain() per
+    // artisan() call can target text inside it (see the note on the very first test).
+    Process::fake(function ($process) {
+        if (in_array("test -d '/srv/app'", $process->command, true)) {
+            throw new ProcessTimedOutException(
+                new SymfonyProcessTimedOutException(new SymfonyProcess(['ssh']), SymfonyProcessTimedOutException::TYPE_GENERAL),
+                Process::result(exitCode: -1),
+            );
+        }
+
+        return Process::result();
+    });
+
+    $this->artisan('sync:doctor', ['remote' => 'production'])
+        ->expectsOutputToContain('skipped, SSH connection timed out')
+        ->assertFailed();
+});
+
+it('reports the generic sync:test-connection reason when the SSH connection fails for a reason other than ssh itself', function () {
+    // exitCode 1, not 255: the connection succeeded but "test -d" itself failed,
+    // e.g. because the configured root doesn't exist — an ssh-level failure (255)
+    // gets its own more specific reason, but this one is unrelated to that.
+    Process::fake(fn ($process) => in_array("test -d '/srv/app'", $process->command, true)
+        ? Process::result(exitCode: 1)
+        : Process::result());
+
+    $this->artisan('sync:doctor', ['remote' => 'production'])
+        ->expectsOutputToContain('FAILED (see sync:test-connection)')
+        ->assertFailed();
 });
 
 it('checks every configured remote with --all', function () {

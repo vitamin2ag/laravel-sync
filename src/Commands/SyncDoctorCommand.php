@@ -7,10 +7,9 @@ namespace Vitamin2\Sync\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Contracts\Process\ProcessResult;
-use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Process;
 use Vitamin2\Sync\Commands\Concerns\ResolvesRemote;
+use Vitamin2\Sync\Data\CheckOutcome;
 use Vitamin2\Sync\Data\Remote;
 use Vitamin2\Sync\Exceptions\SyncException;
 use Vitamin2\Sync\Ssh\ConnectionCommand;
@@ -34,13 +33,6 @@ class SyncDoctorCommand extends Command
 {
     use ResolvesRemote;
 
-    /**
-     * Bounds each individual check — both the local `rsync --version` call and each SSH
-     * round trip, on top of `ConnectionCommand`'s and `RsyncAvailableCommand`'s own
-     * `ConnectTimeout` — a safety net against any one of them hanging once started.
-     */
-    private const int TIMEOUT_SECONDS = 10;
-
     protected $signature = 'sync:doctor
         {remote? : The remote to check}
         {--A|all : Check every configured remote}';
@@ -61,10 +53,10 @@ class SyncDoctorCommand extends Command
 
         table(
             headers: ['Remote', 'Check', 'Result'],
-            rows: array_map(fn (array $outcome) => [$outcome[0], $outcome[1], $outcome[2]], $outcomes),
+            rows: array_map(fn (CheckOutcome $outcome) => $outcome->toRow(), $outcomes),
         );
 
-        if (collect($outcomes)->contains(fn (array $outcome) => ! $outcome[3])) {
+        if (collect($outcomes)->contains(fn (CheckOutcome $outcome) => ! $outcome->passed)) {
             $this->error('One or more checks failed — see the table above.');
 
             return self::FAILURE;
@@ -88,13 +80,8 @@ class SyncDoctorCommand extends Command
     }
 
     /**
-     * Every check as a flat, independent outcome (remote, check label, result label,
-     * passed) rather than a row/healthy pair threaded through the loop below — adding a
-     * check only means appending another outcome here; the table rows and the overall
-     * pass/fail in `handle()` are each derived from the full list on their own.
-     *
      * Runs each phase across every remote at once (local `rsync` and every remote's SSH
-     * connection together, then every still-relevant remote's `rsync` check together),
+     * connection together, then every still-connected remote's `rsync` check together)
      * instead of one remote's full round trip at a time — `--all` against several slow
      * or unreachable remotes then costs one connection round trip's worth of wall clock,
      * not the sum of all of them.
@@ -104,92 +91,103 @@ class SyncDoctorCommand extends Command
      * only fail again — starting it anyway would needlessly double the failed attempts.
      *
      * @param  Collection<int, Remote>  $remotes
-     * @return list<array{0: string, 1: string, 2: string, 3: bool}>
+     * @return list<CheckOutcome>
      */
     private function runChecks(Collection $remotes): array
     {
-        $local = $this->start(['rsync', '--version']);
+        $remoteRemotes = $remotes->reject(fn (Remote $remote) => $remote->isLocal());
 
-        $connections = $remotes->reject(fn (Remote $remote) => $remote->isLocal())
-            ->mapWithKeys(fn (Remote $remote) => [$remote->name => $this->start((new ConnectionCommand($remote))->toArgs())]);
+        $local = SshOptions::start(['rsync', '--version']);
 
-        $localResult = $this->wait($local);
-        $outcomes = [[
+        $connections = $remoteRemotes->mapWithKeys(
+            fn (Remote $remote) => [$remote->name => SshOptions::start((new ConnectionCommand($remote))->toArgs())],
+        );
+
+        $localResult = SshOptions::wait($local);
+        $localAvailable = $localResult?->successful();
+        $outcomes = [new CheckOutcome(
             '-',
             'Local rsync',
-            $this->resultLabel($localResult?->successful(), 'not found on PATH'),
-            $localResult?->successful() === true,
-        ]];
+            $localAvailable === true ? 'OK' : $this->resultLabel($localAvailable, $this->localFailureReason($localResult)),
+            $localAvailable === true,
+        )];
 
-        $connectionResults = $connections->map(fn (?InvokedProcess $process) => $this->wait($process));
+        $connectionResults = $connections->map(fn (?InvokedProcess $process) => SshOptions::wait($process));
+        $connected = fn (Remote $remote): bool => $connectionResults[$remote->name]?->successful() === true;
 
-        $rsyncChecks = $remotes
-            ->reject(fn (Remote $remote) => $remote->isLocal() || $connectionResults[$remote->name]?->successful() !== true)
-            ->mapWithKeys(fn (Remote $remote) => [$remote->name => $this->start((new RsyncAvailableCommand($remote))->toArgs())]);
+        $rsyncChecks = $remoteRemotes->filter($connected)->mapWithKeys(
+            fn (Remote $remote) => [$remote->name => SshOptions::start((new RsyncAvailableCommand($remote))->toArgs())],
+        );
 
-        $rsyncResults = $rsyncChecks->map(fn (?InvokedProcess $process) => $this->wait($process));
+        $rsyncResults = $rsyncChecks->map(fn (?InvokedProcess $process) => SshOptions::wait($process));
 
         foreach ($remotes as $remote) {
             if ($remote->isLocal()) {
-                $outcomes[] = [$remote->name, 'SSH connection', 'skipped, local remote', true];
+                $outcomes[] = new CheckOutcome($remote->name, 'SSH connection', 'skipped, local remote', true);
 
                 continue;
             }
 
-            $connected = $connectionResults[$remote->name]?->successful();
-            $outcomes[] = [$remote->name, 'SSH connection', $this->resultLabel($connected, 'see sync:test-connection'), $connected === true];
+            $connectionResult = $connectionResults[$remote->name];
+            $isConnected = $connected($remote);
+            $outcomes[] = new CheckOutcome(
+                $remote->name,
+                'SSH connection',
+                $isConnected ? 'OK' : $this->resultLabel($connectionResult?->successful(), $this->connectionFailureReason($connectionResult)),
+                $isConnected,
+            );
 
-            if ($connected !== true) {
-                $outcomes[] = [$remote->name, 'Remote rsync', 'skipped, SSH connection failed', false];
+            if (! $isConnected) {
+                $skipReason = $connectionResult === null ? 'skipped, SSH connection timed out' : 'skipped, SSH connection failed';
+                $outcomes[] = new CheckOutcome($remote->name, 'Remote rsync', $skipReason, false);
 
                 continue;
             }
 
             $rsync = $rsyncResults[$remote->name];
             $rsyncAvailable = $rsync?->successful();
-            $rsyncFailureReason = SshOptions::connectionFailed($rsync) ? 'SSH connection failed unexpectedly' : 'not found on remote';
-            $outcomes[] = [$remote->name, 'Remote rsync', $this->resultLabel($rsyncAvailable, $rsyncFailureReason), $rsyncAvailable === true];
+            $outcomes[] = new CheckOutcome(
+                $remote->name,
+                'Remote rsync',
+                $rsyncAvailable === true ? 'OK' : $this->resultLabel($rsyncAvailable, $this->rsyncFailureReason($rsync)),
+                $rsyncAvailable === true,
+            );
         }
 
         return $outcomes;
     }
 
     /**
-     * Start a check (local or over SSH) without blocking, bounded by `TIMEOUT_SECONDS`.
-     * Returns null if it times out immediately (only reachable under `Process::fake()`,
-     * which resolves a faked timeout eagerly here rather than on `wait()`); a real
-     * process never times out before it has even started.
-     *
-     * @param  list<string>  $args
+     * `rsync` missing from `PATH` entirely exits 127 — the shell's own, well-established
+     * convention for "command not found" — distinct from `rsync` being present but
+     * broken (bad permissions, wrong architecture, ...), which exits some other nonzero
+     * code and shouldn't be misdiagnosed as missing.
      */
-    private function start(array $args): ?InvokedProcess
+    private function localFailureReason(?ProcessResult $result): string
     {
-        try {
-            return Process::timeout(self::TIMEOUT_SECONDS)->start($args);
-        } catch (ProcessTimedOutException) {
-            return null;
-        }
+        return $result?->exitCode() === 127 ? 'not found on PATH' : 'rsync check failed';
     }
 
     /**
-     * Wait for a check started by `start()`, bounded by the same `TIMEOUT_SECONDS`.
-     * Returns null on a timeout (rather than a failed `ProcessResult`) to keep a hang
-     * distinguishable in the reported result; returns the full `ProcessResult`
-     * otherwise (not just its `successful()` bool) so a caller can inspect the exit
-     * code for a more specific failure reason, e.g. distinguishing an `ssh`-level
-     * failure from the remote command's own.
+     * Distinguishes `ssh` itself failing (exit 255) from `test -d`'s own nonzero exit —
+     * the latter still just means "see sync:test-connection", since that command is the
+     * one built to tell root-missing and connection-broken apart in detail.
      */
-    private function wait(?InvokedProcess $process): ?ProcessResult
+    private function connectionFailureReason(?ProcessResult $result): string
     {
-        if (! $process instanceof InvokedProcess) {
-            return null;
-        }
+        return SshOptions::connectionFailed($result) ? 'SSH connection failed' : 'see sync:test-connection';
+    }
 
-        try {
-            return $process->wait();
-        } catch (ProcessTimedOutException) {
-            return null;
-        }
+    /**
+     * `ssh` itself (not the remote command it ran) exits 255 specifically when the
+     * connection drops or fails mid-session — distinct from `command -v rsync`'s own
+     * exit code, which the just-succeeded connection check already proved reachable.
+     * Reporting that as "not found on remote" would misdiagnose a second, unrelated
+     * connection failure as a missing binary.
+     */
+    private function rsyncFailureReason(?ProcessResult $result): string
+    {
+        return SshOptions::connectionFailed($result) ? 'SSH connection failed unexpectedly' : 'not found on remote';
     }
 
     private function resultLabel(?bool $result, string $failureReason): string
@@ -197,7 +195,7 @@ class SyncDoctorCommand extends Command
         return match ($result) {
             true => 'OK',
             false => "FAILED ({$failureReason})",
-            null => sprintf('FAILED (timed out after %d seconds)', self::TIMEOUT_SECONDS),
+            null => sprintf('FAILED (timed out after %d seconds)', SshOptions::TIMEOUT_SECONDS),
         };
     }
 }
