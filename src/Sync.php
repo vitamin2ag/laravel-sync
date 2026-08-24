@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vitamin2\Sync;
 
 use Closure;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -178,7 +179,26 @@ class Sync
             return false;
         }
 
-        return Process::forever()->run((new RestoreCommand($folder, $dry, $mirror))->toArgs(), $onOutput)->successful();
+        return $this->restoreCommands($folder, $dry, $mirror)
+            ->map(fn (RestoreCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
+            ->every(fn (ProcessResult $result) => $result->successful());
+    }
+
+    /**
+     * One command for the whole backup folder, or, when mirroring, one per its top-level
+     * entry — see `RestoreCommand`'s class docblock for why mirroring can't run as a
+     * single whole-folder call.
+     *
+     * @return Collection<int, RestoreCommand>
+     */
+    private function restoreCommands(BackupFolder $folder, bool $dry, bool $mirror): Collection
+    {
+        if (! $mirror) {
+            return collect([new RestoreCommand($folder, $dry, $mirror)]);
+        }
+
+        return collect($folder->topLevelEntries())
+            ->map(fn (string $entry) => new RestoreCommand($folder, $dry, $mirror, $entry));
     }
 
     /**

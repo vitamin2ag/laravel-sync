@@ -72,6 +72,23 @@ final readonly class BackupFolder
     }
 
     /**
+     * The folder's own top-level entries (dirs and files), sorted for determinism.
+     * `Sync::restoreBackup()`'s mirror mode scopes `--delete` to these, one `rsync` call
+     * per entry — see `RestoreCommand`'s class docblock for why a single whole-folder
+     * call can't do this safely.
+     *
+     * @return list<string>
+     */
+    public function topLevelEntries(): array
+    {
+        $entries = array_diff((@scandir($this->path)) ?: [], ['.', '..']);
+
+        sort($entries);
+
+        return $entries;
+    }
+
+    /**
      * Parse a folder name against `Backup::FORMAT`, rejecting it if the format doesn't match.
      *
      * Native `DateTimeImmutable`, not `Carbon::createFromFormat()`: the native parser returns

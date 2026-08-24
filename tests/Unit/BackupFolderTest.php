@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Number;
+use Illuminate\Support\Str;
 use Vitamin2\Sync\Data\BackupFolder;
 
 it('parses the name, path, size, and created-at timestamp from a folder path', function () {
@@ -62,4 +64,51 @@ it('returns null from tryFromPath() for an invalid name, without calling the siz
 
     expect($folder)->toBeNull()
         ->and($called)->toBeFalse();
+});
+
+it('captures the real, symlink-resolved path as canonicalPath for a folder that exists on disk', function () {
+    $dir = base_path('.sync-backups-'.Str::random(8));
+    File::ensureDirectoryExists("{$dir}/2026-07-24_134530");
+
+    try {
+        $folder = BackupFolder::fromPath("{$dir}/2026-07-24_134530", 0);
+
+        expect($folder->canonicalPath)->toBe(str_replace('\\', '/', realpath("{$dir}/2026-07-24_134530")));
+    } finally {
+        File::deleteDirectory($dir);
+    }
+});
+
+it('leaves canonicalPath null for a folder that does not exist on disk', function () {
+    $folder = BackupFolder::fromPath(base_path('.sync-backups/2026-07-24_134530'), 0);
+
+    expect($folder->canonicalPath)->toBeNull();
+});
+
+it('lists the backup folder\'s own top-level entries, sorted', function () {
+    $dir = base_path('.sync-backups-'.Str::random(8));
+    File::ensureDirectoryExists("{$dir}/2026-07-24_134530/storage/app");
+    File::put("{$dir}/2026-07-24_134530/composer.json", '{}');
+    File::put("{$dir}/2026-07-24_134530/.env", 'SECRET=1');
+
+    try {
+        $folder = BackupFolder::fromPath("{$dir}/2026-07-24_134530", 0);
+
+        expect($folder->topLevelEntries())->toBe(['.env', 'composer.json', 'storage']);
+    } finally {
+        File::deleteDirectory($dir);
+    }
+});
+
+it('returns no top-level entries for an empty backup folder', function () {
+    $dir = base_path('.sync-backups-'.Str::random(8));
+    File::ensureDirectoryExists("{$dir}/2026-07-24_134530");
+
+    try {
+        $folder = BackupFolder::fromPath("{$dir}/2026-07-24_134530", 0);
+
+        expect($folder->topLevelEntries())->toBe([]);
+    } finally {
+        File::deleteDirectory($dir);
+    }
 });

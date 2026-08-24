@@ -7,14 +7,18 @@ namespace Vitamin2\Sync\Rsync;
 use Vitamin2\Sync\Data\BackupFolder;
 
 /**
- * A local copy of a backup folder back onto the project root, undoing a backed-up pull
- * (see `BackupCommand`, which populates the folder this reads from).
+ * A local copy of a backup folder (or one of its top-level entries) back onto the
+ * project root, undoing a backed-up pull (see `BackupCommand`, which populates the
+ * folder this reads from).
  *
- * A single `rsync` call, not one per recipe path like `BackupCommand`/`RsyncCommand`:
- * `BackupCommand` already recreates each recipe path's own directory structure under the
- * backup folder (via `--relative`), so mirroring that whole folder back onto the project
- * root in one pass restores everything the backup captured, however many recipe paths
- * that was.
+ * One `rsync` call per top-level entry when `$mirror` is set, not one per recipe path
+ * like `BackupCommand`/`RsyncCommand`: mirroring adds `--delete`, and `rsync --delete`
+ * prunes anything at the *target* missing from the *source* — a single whole-folder call
+ * would prune the entire project root down to whatever the backup happened to capture
+ * (`vendor/`, `.git/`, unrelated recipes, all of it), since the backup folder's own top
+ * level rarely has more than the handful of paths that were actually backed up. Scoping
+ * each call to one entry (`$entry`) keeps `--delete` confined to that entry's own subtree.
+ * A non-mirroring restore has no such risk and still runs as a single whole-folder call.
  *
  * Doesn't implement `Arrayable`/`Stringable` like `RsyncCommand`/`BackupCommand` do:
  * those feed `sync:list`/`sync:commands`-style preview tables and command strings, but
@@ -35,24 +39,41 @@ final readonly class RestoreCommand
         public BackupFolder $backup,
         public bool $dry = false,
         public bool $mirror = false,
+        public ?string $entry = null,
     ) {}
 
     /**
-     * The backup folder's contents (trailing slash: copy what's inside it, not the
-     * folder itself) — already structured as a mirror of the project root by
-     * `BackupCommand`'s own `--relative` copy.
+     * The backup source for this call: the whole folder (always a directory — trailing
+     * slash unconditional, as before), or, scoped to one of its top-level entries (see
+     * the class docblock), just that entry — trailing slash only when the entry itself
+     * is a directory, so a mirrored entry merges into the target instead of nesting
+     * under it; a file entry is copied as-is.
      */
     public function origin(): string
     {
-        return rtrim($this->backup->path, '/').'/';
+        if ($this->entry === null) {
+            return rtrim($this->backup->path, '/').'/';
+        }
+
+        $path = rtrim("{$this->backup->path}/{$this->entry}", '/');
+
+        return is_dir($path) ? "{$path}/" : $path;
     }
 
     /**
-     * The project root (trailing slash: merge into it, not replace it).
+     * The restore target: the project root (always a directory), or, scoped, the
+     * matching path under it — directory-ness is read from the *source* entry, not this
+     * path, since the target may not exist yet (e.g. a fresh checkout missing it).
      */
     public function target(): string
     {
-        return rtrim(base_path(), '/').'/';
+        if ($this->entry === null) {
+            return rtrim(base_path(), '/').'/';
+        }
+
+        $path = rtrim("{$this->backup->path}/{$this->entry}", '/');
+
+        return is_dir($path) ? rtrim(base_path($this->entry), '/').'/' : base_path($this->entry);
     }
 
     /**

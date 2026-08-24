@@ -607,14 +607,40 @@ it('restores a backup folder onto the project root', function () {
         && ! in_array('--dry-run', $process->command, true));
 });
 
-it('restores a backup folder with --delete when mirroring', function () {
-    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+it('restores a backup folder with one --delete rsync call per top-level entry when mirroring', function () {
+    // Two entries (a file and a directory) so mirroring must run one rsync call per
+    // entry, not one whole-folder call — a single call would let --delete prune the
+    // *entire* project root down to whatever this backup happened to capture.
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage/app");
+    File::put("{$this->backupPath}/2026-07-24_134530/composer.json", '{}');
     Process::fake();
     $folder = resolve(Sync::class)->backups()->sole();
 
     expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeTrue();
 
-    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true));
+    Process::assertRanTimes(fn ($process) => true, 2);
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true)
+        && in_array("{$folder->path}/composer.json", $process->command, true)
+        && in_array(base_path('composer.json'), $process->command, true));
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true)
+        && in_array("{$folder->path}/storage/", $process->command, true)
+        && in_array(base_path('storage').'/', $process->command, true));
+});
+
+it('reports failure when mirroring and any per-entry restore fails, without stopping the rest', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage");
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/public");
+    Process::fake([
+        '*storage*' => Process::result(exitCode: 1),
+        '*' => Process::result(exitCode: 0),
+    ]);
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeFalse();
+
+    Process::assertRanTimes(fn ($process) => true, 2);
 });
 
 it('restores a backup folder without --delete by default', function () {
