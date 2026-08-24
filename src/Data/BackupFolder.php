@@ -45,11 +45,9 @@ final readonly class BackupFolder
      * `$size` is a callback, not a plain value, so an invalid folder name is rejected
      * before paying for its recursive size calculation.
      *
-     * `canonicalPath` pins the folder's real, symlink-resolved location as it existed at
-     * this exact moment — the identity `Sync::isUnsafeToActOn()` re-checks against right
-     * before deleting or restoring, so an ancestor symlink repointed afterward (even to
-     * another real, same-named directory still inside the project) can't be mistaken for
-     * the folder that was actually listed.
+     * `canonicalPath` pins the folder's real, symlink-resolved location at this moment —
+     * the identity `Sync::isUnsafeToActOn()` re-checks against before acting, so a later
+     * repoint can't be mistaken for the folder that was actually listed.
      *
      * @param  callable(): int  $size
      */

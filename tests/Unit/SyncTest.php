@@ -680,8 +680,8 @@ it('refuses to act on a backup folder whose parent backup_dir symlink was repoin
     // resolves inside the project when validated (at listing time, inside backups()).
     // If that symlink is later repointed outside the project, the *leaf* backup folder
     // it now resolves through can still be a perfectly real directory — is_link() on
-    // the leaf alone can't catch this, only a real-path containment check against the
-    // project root can.
+    // the leaf alone can't catch this, only comparing its real path against the one
+    // captured at listing time (BackupFolder::$canonicalPath) can.
     $inside = "{$this->backupPath}-inside";
     File::ensureDirectoryExists("{$inside}/2026-07-24_134530");
 

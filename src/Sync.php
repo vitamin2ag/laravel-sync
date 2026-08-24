@@ -182,24 +182,14 @@ class Sync
     }
 
     /**
-     * Whether a backup folder is no longer safe to delete or restore, re-checked
-     * immediately before acting. Shared by `deleteBackup()` and `restoreBackup()`: both
-     * have an interactive flow (a `multiselect()`/`select()` plus a `confirm()` prompt)
-     * between listing and acting — an arbitrarily long, user-paced window during which
-     * the folder could have changed (a concurrent process, or a race).
+     * Whether a backup folder is no longer safe to act on, re-checked right before
+     * `deleteBackup()`/`restoreBackup()` run — an interactive prompt sits between listing
+     * and acting, an arbitrarily long window for the folder to change underneath.
      *
-     * Two independent checks, not one:
-     *
-     * - `is_link()` on the folder itself: catches the *leaf* being swapped for a symlink
-     *   since listing, regardless of what it now points at — `backups()`'s own
-     *   listing-time filter already excludes symlinks, so any leaf symlink here is new.
-     * - Real-path identity against `$folder->canonicalPath`, captured by `backups()` at
-     *   listing time: `backup_dir` itself is allowed to be a symlink (see
-     *   `guardBackupDirSafe()`), so an *ancestor* symlink repointed afterward — even to
-     *   another real, same-named directory still inside the project — resolves to a
-     *   different real path than what was originally listed. Comparing against the
-     *   project root alone can't catch that: the new target can be a perfectly real
-     *   directory that's still inside the project, just not the one that was selected.
+     * `is_link()` catches the leaf itself being swapped for a symlink. The canonical-path
+     * comparison catches the other case: `backup_dir` is allowed to be a symlink (see
+     * `guardBackupDirSafe()`), so its *ancestor* can be repointed afterward to a different,
+     * still-real, same-named directory — one `is_link()` on the leaf can't see.
      */
     private function isUnsafeToActOn(BackupFolder $folder): bool
     {

@@ -36,11 +36,9 @@ class SyncBackupsRestoreCommand extends Command
         try {
             $backups = $sync->backups();
 
-            // Only short-circuits when no backup was explicitly named: with a `backup`
-            // argument given, an empty list must still reach resolveBackup() below so it
-            // reports "unknown backup" — reporting "no backups found" (and exiting 0)
-            // instead would let e.g. `sync:backups-restore missing --no-interaction`
-            // silently "succeed" against a typo'd or already-deleted backup name.
+            // Only short-circuits when no backup was named — an explicit but unknown name
+            // must still reach resolveBackup() below to fail with "unknown backup", not
+            // silently exit 0 as "no backups found".
             if ($backups->isEmpty() && ! $this->hasExplicitBackupArgument()) {
                 $this->info(sprintf('No backups found in "%s".', $sync->backupDir()));
 
@@ -91,17 +89,11 @@ class SyncBackupsRestoreCommand extends Command
     }
 
     /**
-     * Resolve which backup to restore: the `backup` argument if given, an interactive
-     * `select()` otherwise, or a friendly error when neither applies — matching
-     * `ResolvesRemote::resolveArgumentOrPrompt()`'s exact shape (prompt only when the
-     * argument is missing outright, not merely blank; an explicit empty string always
-     * fails fast with `backupRequired()`, interactive or not), even though this command
-     * doesn't use that trait itself (see the class docblock).
+     * Resolve which backup to restore, matching `ResolvesRemote::resolveArgumentOrPrompt()`'s
+     * shape: prompt only when the argument is missing outright, not merely blank.
      *
-     * The chosen name is looked up once, at the end, in the already-fetched `$backups`
-     * collection — not via a second call to `backups()`, which is deliberately not
-     * memoized and would re-glob `backup_dir` and recompute every backup folder's
-     * recursive size all over again just to find an entry `handle()` already has.
+     * Looks up the chosen name in the already-fetched `$backups`, not a second `backups()`
+     * call — that method isn't memoized, and would re-glob and re-size every folder again.
      *
      * @param  Collection<int, BackupFolder>  $backups
      */
