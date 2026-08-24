@@ -193,15 +193,13 @@ class Sync
      * - `is_link()` on the folder itself: catches the *leaf* being swapped for a symlink
      *   since listing, regardless of what it now points at — `backups()`'s own
      *   listing-time filter already excludes symlinks, so any leaf symlink here is new.
-     * - Real-path containment against the project root: `backup_dir` itself is allowed
-     *   to be a symlink (see `guardBackupDirSafe()`), validated only at listing time —
-     *   catches that *ancestor* symlink being repointed outside the project afterward,
-     *   which `is_link()` on the leaf alone can't see (the leaf can be a perfectly real
-     *   directory at the *new*, now-external location `backup_dir` resolves to).
-     *
-     * Mirrors `guardBackupDirNotEscapingRootOnDisk()`'s same real-path check for
-     * `backup_dir` itself; unlike that guard, no "walk up to the nearest existing
-     * ancestor" is needed here, since the folder is already known to exist.
+     * - Real-path identity against `$folder->canonicalPath`, captured by `backups()` at
+     *   listing time: `backup_dir` itself is allowed to be a symlink (see
+     *   `guardBackupDirSafe()`), so an *ancestor* symlink repointed afterward — even to
+     *   another real, same-named directory still inside the project — resolves to a
+     *   different real path than what was originally listed. Comparing against the
+     *   project root alone can't catch that: the new target can be a perfectly real
+     *   directory that's still inside the project, just not the one that was selected.
      */
     private function isUnsafeToActOn(BackupFolder $folder): bool
     {
@@ -210,9 +208,8 @@ class Sync
         }
 
         $normalizedReal = $this->normalizeRealpath(realpath($folder->path));
-        $normalizedRoot = $this->normalizeRealpath(realpath(base_path()));
 
-        return $normalizedReal === null || $normalizedRoot === null || ! $this->isPathWithin($normalizedReal, $normalizedRoot);
+        return $normalizedReal === null || $folder->canonicalPath === null || $normalizedReal !== $folder->canonicalPath;
     }
 
     /**

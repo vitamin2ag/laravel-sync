@@ -723,6 +723,47 @@ it('refuses to act on a backup folder whose parent backup_dir symlink was repoin
     }
 });
 
+it('refuses to act on a backup folder whose parent backup_dir symlink was repointed to a different location still inside the project', function () {
+    // A root-containment check alone would pass here: the repointed target is a real,
+    // same-named directory, and it's still inside the project. Only comparing against
+    // the canonical path captured at listing time (BackupFolder::$canonicalPath) can
+    // tell the two apart.
+    $inside = "{$this->backupPath}-inside";
+    File::ensureDirectoryExists("{$inside}/2026-07-24_134530");
+
+    $linkDir = 'sync-backups-symlink-'.Str::random(8);
+    $linkPath = base_path($linkDir);
+
+    if (! @symlink($inside, $linkPath)) {
+        File::deleteDirectory($inside);
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    config(['sync.backup_dir' => $linkDir]);
+    Process::fake();
+
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    $elsewhereInside = base_path('sync-backups-elsewhere-'.Str::random(8));
+    File::ensureDirectoryExists("{$elsewhereInside}/2026-07-24_134530");
+
+    @unlink($linkPath);
+    @rmdir($linkPath);
+    @symlink($elsewhereInside, $linkPath);
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse()
+            ->and(resolve(Sync::class)->deleteBackup($folder))->toBeFalse();
+
+        Process::assertNothingRan();
+    } finally {
+        @unlink($linkPath);
+        @rmdir($linkPath);
+        File::deleteDirectory($inside);
+        File::deleteDirectory($elsewhereInside);
+    }
+});
+
 it('reports failure when a backup folder survives its own delete attempt', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
     $folder = resolve(Sync::class)->backups()->sole();

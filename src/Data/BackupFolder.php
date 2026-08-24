@@ -20,6 +20,7 @@ final readonly class BackupFolder
         public string $path,
         public int $size,
         public Carbon $createdAt,
+        public ?string $canonicalPath,
     ) {}
 
     /**
@@ -44,6 +45,12 @@ final readonly class BackupFolder
      * `$size` is a callback, not a plain value, so an invalid folder name is rejected
      * before paying for its recursive size calculation.
      *
+     * `canonicalPath` pins the folder's real, symlink-resolved location as it existed at
+     * this exact moment — the identity `Sync::isUnsafeToActOn()` re-checks against right
+     * before deleting or restoring, so an ancestor symlink repointed afterward (even to
+     * another real, same-named directory still inside the project) can't be mistaken for
+     * the folder that was actually listed.
+     *
      * @param  callable(): int  $size
      */
     public static function tryFromPath(string $path, callable $size): ?self
@@ -55,7 +62,15 @@ final readonly class BackupFolder
             return null;
         }
 
-        return new self(name: $name, path: $path, size: $size(), createdAt: Date::instance($parsed));
+        $realPath = realpath($path);
+
+        return new self(
+            name: $name,
+            path: $path,
+            size: $size(),
+            createdAt: Date::instance($parsed),
+            canonicalPath: $realPath === false ? null : str_replace('\\', '/', $realPath),
+        );
     }
 
     /**
