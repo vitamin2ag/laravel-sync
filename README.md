@@ -240,6 +240,7 @@ php artisan sync {push|pull} {remote} {recipe...} [options]
 | `-B`, `--backup` | Back up local files to `backup_dir` before a real pull. |
 | `-F`, `--force` | `sync:backups-clean` and `sync:backups-restore` only. Skip the confirmation prompt. |
 | `-K`, `--keep=` | `sync:backups-clean` only. Keep the N newest backups, deleting the rest. |
+| `-M`, `--mirror` | `sync:backups-restore` only. Also delete files on the project root that the backup doesn't have, mirroring it exactly. |
 | `--older-than=` | `sync:backups-clean` only. Delete backups older than N days. |
 | `-v` | Show real-time output while syncing (progress, stats, ...). |
 
@@ -284,8 +285,10 @@ pull. Pass the backup's name (`{backup}` argument) or omit it to pick one from a
 `--dry` to preview what would be restored (with real-time output) without touching anything, and `--force`
 to skip the confirmation prompt.
 
-Only overwrites files the backup actually captured — it doesn't delete anything created since the backup was
-taken. Run `php artisan sync:backups-clean` afterwards if you also want to remove the backup you just restored.
+By default it only overwrites files the backup actually captured — it doesn't delete anything created since
+the backup was taken. Add `--mirror` for a 1:1 restore instead, adding rsync's `--delete` so the project root
+ends up exactly matching the backup, with anything not in it removed. Run `php artisan sync:backups-clean`
+afterwards if you also want to remove the backup you just restored.
 
 ### Testing a Connection
 
@@ -344,6 +347,9 @@ php artisan sync:backups-restore 2026-07-24_134530 --force
 
 # Preview what a restore would change, with real-time output
 php artisan sync:backups-restore 2026-07-24_134530 --dry
+
+# Restore a backup 1:1, deleting anything the backup doesn't have
+php artisan sync:backups-restore 2026-07-24_134530 --mirror --force
 ```
 
 ## Changelog

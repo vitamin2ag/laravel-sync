@@ -172,13 +172,13 @@ class Sync
      * Runs `rsync` directly, not via `PendingSync`: a restore has no remote, recipe, or
      * rsync-option shape to build one of those from, just a single local copy.
      */
-    public function restoreBackup(BackupFolder $folder, bool $dry, ?Closure $onOutput = null): bool
+    public function restoreBackup(BackupFolder $folder, bool $dry, bool $mirror = false, ?Closure $onOutput = null): bool
     {
         if ($this->isUnsafeToActOn($folder)) {
             return false;
         }
 
-        return Process::forever()->run((new RestoreCommand($folder, $dry))->toArgs(), $onOutput)->successful();
+        return Process::forever()->run((new RestoreCommand($folder, $dry, $mirror))->toArgs(), $onOutput)->successful();
     }
 
     /**

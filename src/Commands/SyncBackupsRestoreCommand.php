@@ -25,7 +25,8 @@ class SyncBackupsRestoreCommand extends Command
     protected $signature = 'sync:backups-restore
         {backup? : The backup to restore}
         {--D|dry : Preview what would be restored, without restoring anything}
-        {--F|force : Skip the confirmation prompt}';
+        {--F|force : Skip the confirmation prompt}
+        {--M|mirror : Also delete files on the project root that the backup does not have, mirroring it exactly}';
 
     protected $description = 'Restore a backup folder\'s contents back onto the project root';
 
@@ -54,8 +55,9 @@ class SyncBackupsRestoreCommand extends Command
 
         $dry = (bool) $this->option('dry');
         $force = (bool) $this->option('force');
+        $mirror = (bool) $this->option('mirror');
 
-        if (! $this->confirmUnlessSkipped($dry || $force, fn () => $this->confirmRestore($backup))) {
+        if (! $this->confirmUnlessSkipped($dry || $force, fn () => $this->confirmRestore($backup, $mirror))) {
             $this->comment('Restore aborted.');
 
             return self::SUCCESS;
@@ -63,7 +65,7 @@ class SyncBackupsRestoreCommand extends Command
 
         $onOutput = fn (string $type, string $output) => $this->output->write($output);
 
-        if (! $sync->restoreBackup($backup, $dry, $onOutput)) {
+        if (! $sync->restoreBackup($backup, $dry, $mirror, $onOutput)) {
             $this->error($dry ? 'Dry run failed.' : 'Restore failed.');
 
             return self::FAILURE;
@@ -115,12 +117,13 @@ class SyncBackupsRestoreCommand extends Command
         return $backups->firstWhere('name', $name) ?? throw SyncException::unknownBackup($name);
     }
 
-    private function confirmRestore(BackupFolder $backup): bool
+    private function confirmRestore(BackupFolder $backup, bool $mirror): bool
     {
         return confirm(
             label: sprintf(
-                'You are about to restore backup "%s" onto your project. Existing files may be overwritten. Are you sure?',
+                'You are about to restore backup "%s" onto your project. Existing files may be overwritten%s. Are you sure?',
                 $backup->name,
+                $mirror ? ', and files the backup does not have will be deleted' : '',
             ),
             default: false,
         );

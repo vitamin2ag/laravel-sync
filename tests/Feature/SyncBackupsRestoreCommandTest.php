@@ -143,6 +143,28 @@ it('skips the confirmation prompt on a dry run, without needing --force', functi
     Process::assertRan(fn ($process) => in_array('--dry-run', $process->command, true));
 });
 
+it('adds --delete to the rsync call with --mirror', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+
+    $this->artisan('sync:backups-restore', ['backup' => '2026-07-24_134530', '--mirror' => true, '--force' => true])
+        ->assertSuccessful();
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true));
+});
+
+it('warns about deletion in the confirmation prompt with --mirror', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+
+    $this->artisan('sync:backups-restore', ['backup' => '2026-07-24_134530', '--mirror' => true])
+        ->expectsConfirmation(
+            'You are about to restore backup "2026-07-24_134530" onto your project. Existing files may be overwritten, and files the backup does not have will be deleted. Are you sure?',
+            'yes',
+        )
+        ->assertSuccessful();
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true));
+});
+
 it('reports a distinct error when the restore process fails', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
 

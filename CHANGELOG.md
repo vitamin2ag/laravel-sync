@@ -4,7 +4,7 @@
 
 - Add a concurrency guard: `sync` refuses to run when another `sync` is already in progress for the same remote
 - Add `excludes_from` config key: per-recipe rsync `--exclude-from` file support, alongside the existing inline `excludes`
-- Add `sync:backups-restore` Artisan command to restore a backup folder's contents back onto the project root (interactive picker, `--dry`, `--force`)
+- Add `sync:backups-restore` Artisan command to restore a backup folder's contents back onto the project root (interactive picker, `--dry`, `--force`, `--mirror`)
 
 ## [v0.3.0](https://github.com/vitamin2ag/laravel-sync/compare/v0.2.0...v0.3.0) - 2026-08-19
 

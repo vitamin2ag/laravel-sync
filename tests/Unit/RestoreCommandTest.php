@@ -41,6 +41,26 @@ it('adds --dry-run when restoring as a dry run', function () {
     ]);
 });
 
+it('adds --delete when mirroring, before --dry-run', function () {
+    $command = new RestoreCommand($this->backup, dry: true, mirror: true);
+
+    expect($command->toArgs())->toBe([
+        'rsync',
+        '--archive',
+        '--itemize-changes',
+        '--delete',
+        '--dry-run',
+        base_path('.sync-backups/2026-07-24_134530').'/',
+        base_path().'/',
+    ]);
+});
+
+it('omits --delete by default, even when built with named arguments', function () {
+    $command = new RestoreCommand($this->backup, dry: false, mirror: false);
+
+    expect($command->toArgs())->not->toContain('--delete');
+});
+
 it('collapses a trailing slash on the backup folder path instead of doubling it', function () {
     $backup = BackupFolder::fromPath(base_path('.sync-backups/2026-07-24_134530/'), 0);
     $command = new RestoreCommand($backup);

@@ -607,6 +607,26 @@ it('restores a backup folder onto the project root', function () {
         && ! in_array('--dry-run', $process->command, true));
 });
 
+it('restores a backup folder with --delete when mirroring', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeTrue();
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true));
+});
+
+it('restores a backup folder without --delete by default', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeTrue();
+
+    Process::assertRan(fn ($process) => ! in_array('--delete', $process->command, true));
+});
+
 it('restores a backup folder as a dry run, adding --dry-run', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
     Process::fake();

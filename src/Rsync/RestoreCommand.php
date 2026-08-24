@@ -26,13 +26,15 @@ final readonly class RestoreCommand
     /**
      * Fixed, not user-overridable: `--archive` for a faithful copy (permissions,
      * timestamps, symlinks, ...), `--itemize-changes` so both a dry run and a real
-     * restore report exactly what would be (or was) written back.
+     * restore report exactly what would be (or was) written back. `--delete` is the one
+     * exception, gated behind `$mirror` rather than hardcoded here.
      */
     private const array OPTIONS = ['--archive', '--itemize-changes'];
 
     public function __construct(
         public BackupFolder $backup,
         public bool $dry = false,
+        public bool $mirror = false,
     ) {}
 
     /**
@@ -64,6 +66,7 @@ final readonly class RestoreCommand
         return [
             'rsync',
             ...self::OPTIONS,
+            ...($this->mirror ? ['--delete'] : []),
             ...($this->dry ? ['--dry-run'] : []),
             $this->origin(),
             $this->target(),
