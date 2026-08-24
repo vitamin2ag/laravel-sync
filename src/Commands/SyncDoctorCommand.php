@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vitamin2\Sync\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
@@ -14,6 +15,7 @@ use Vitamin2\Sync\Data\Remote;
 use Vitamin2\Sync\Exceptions\SyncException;
 use Vitamin2\Sync\Ssh\ConnectionCommand;
 use Vitamin2\Sync\Ssh\RsyncAvailableCommand;
+use Vitamin2\Sync\Ssh\SshOptions;
 use Vitamin2\Sync\Sync;
 
 use function Laravel\Prompts\table;
@@ -55,20 +57,14 @@ class SyncDoctorCommand extends Command
             return self::FAILURE;
         }
 
-        $localRsync = $this->runWithTimeout(['rsync', '--version']);
-        $localRsyncAvailable = $localRsync?->successful();
-        $rows = [['-', 'Local rsync', $this->resultLabel($localRsyncAvailable, 'not found on PATH')]];
-        $healthy = $localRsyncAvailable === true;
+        $outcomes = $this->runChecks($remotes);
 
-        foreach ($remotes as $remote) {
-            ['rows' => $remoteRows, 'healthy' => $remoteHealthy] = $this->checkRemote($remote);
-            $rows = [...$rows, ...$remoteRows];
-            $healthy = $healthy && $remoteHealthy;
-        }
+        table(
+            headers: ['Remote', 'Check', 'Result'],
+            rows: array_map(fn (array $outcome) => [$outcome[0], $outcome[1], $outcome[2]], $outcomes),
+        );
 
-        table(headers: ['Remote', 'Check', 'Result'], rows: $rows);
-
-        if (! $healthy) {
+        if (collect($outcomes)->contains(fn (array $outcome) => ! $outcome[3])) {
             $this->error('One or more checks failed — see the table above.');
 
             return self::FAILURE;
@@ -92,64 +88,105 @@ class SyncDoctorCommand extends Command
     }
 
     /**
-     * Run every check for a single remote, reporting both its table rows and whether it
-     * passed — as a typed pair, not inferred later from the rendered row text, which
-     * would silently break if `resultLabel()`'s wording ever changed.
+     * Every check as a flat, independent outcome (remote, check label, result label,
+     * passed) rather than a row/healthy pair threaded through the loop below — adding a
+     * check only means appending another outcome here; the table rows and the overall
+     * pass/fail in `handle()` are each derived from the full list on their own.
      *
-     * A local remote (no `user`/`host`) skips the SSH checks entirely — there's no
-     * connection to test, and the local `rsync` check already covers it.
+     * Runs each phase across every remote at once (local `rsync` and every remote's SSH
+     * connection together, then every still-relevant remote's `rsync` check together),
+     * instead of one remote's full round trip at a time — `--all` against several slow
+     * or unreachable remotes then costs one connection round trip's worth of wall clock,
+     * not the sum of all of them.
      *
-     * @return array{rows: list<array{0: string, 1: string, 2: string}>, healthy: bool}
+     * The remote rsync check is only started for a remote whose connection already
+     * succeeded: it would need that very same SSH connection to run, so a failed one can
+     * only fail again — starting it anyway would needlessly double the failed attempts.
+     *
+     * @param  Collection<int, Remote>  $remotes
+     * @return list<array{0: string, 1: string, 2: string, 3: bool}>
      */
-    private function checkRemote(Remote $remote): array
+    private function runChecks(Collection $remotes): array
     {
-        if ($remote->isLocal()) {
-            return ['rows' => [[$remote->name, 'SSH connection', 'skipped, local remote']], 'healthy' => true];
+        $local = $this->start(['rsync', '--version']);
+
+        $connections = $remotes->reject(fn (Remote $remote) => $remote->isLocal())
+            ->mapWithKeys(fn (Remote $remote) => [$remote->name => $this->start((new ConnectionCommand($remote))->toArgs())]);
+
+        $localResult = $this->wait($local);
+        $outcomes = [[
+            '-',
+            'Local rsync',
+            $this->resultLabel($localResult?->successful(), 'not found on PATH'),
+            $localResult?->successful() === true,
+        ]];
+
+        $connectionResults = $connections->map(fn (?InvokedProcess $process) => $this->wait($process));
+
+        $rsyncChecks = $remotes
+            ->reject(fn (Remote $remote) => $remote->isLocal() || $connectionResults[$remote->name]?->successful() !== true)
+            ->mapWithKeys(fn (Remote $remote) => [$remote->name => $this->start((new RsyncAvailableCommand($remote))->toArgs())]);
+
+        $rsyncResults = $rsyncChecks->map(fn (?InvokedProcess $process) => $this->wait($process));
+
+        foreach ($remotes as $remote) {
+            if ($remote->isLocal()) {
+                $outcomes[] = [$remote->name, 'SSH connection', 'skipped, local remote', true];
+
+                continue;
+            }
+
+            $connected = $connectionResults[$remote->name]?->successful();
+            $outcomes[] = [$remote->name, 'SSH connection', $this->resultLabel($connected, 'see sync:test-connection'), $connected === true];
+
+            if ($connected !== true) {
+                $outcomes[] = [$remote->name, 'Remote rsync', 'skipped, SSH connection failed', false];
+
+                continue;
+            }
+
+            $rsync = $rsyncResults[$remote->name];
+            $rsyncAvailable = $rsync?->successful();
+            $rsyncFailureReason = SshOptions::connectionFailed($rsync) ? 'SSH connection failed unexpectedly' : 'not found on remote';
+            $outcomes[] = [$remote->name, 'Remote rsync', $this->resultLabel($rsyncAvailable, $rsyncFailureReason), $rsyncAvailable === true];
         }
 
-        $connection = $this->runWithTimeout((new ConnectionCommand($remote))->toArgs());
-        $connected = $connection?->successful();
-        $rows = [[$remote->name, 'SSH connection', $this->resultLabel($connected, 'see sync:test-connection')]];
-
-        // Skip the remote rsync check entirely when the connection itself already
-        // failed: it would need the very same SSH connection to run, so it can only
-        // fail too — reporting "not found on remote" in that case would misdiagnose
-        // an unreachable host or bad auth as a missing rsync binary, and running it
-        // anyway would needlessly double the failed SSH connection attempts.
-        if ($connected !== true) {
-            $rows[] = [$remote->name, 'Remote rsync', 'skipped, SSH connection failed'];
-
-            return ['rows' => $rows, 'healthy' => false];
-        }
-
-        $rsync = $this->runWithTimeout((new RsyncAvailableCommand($remote))->toArgs());
-        $rsyncAvailable = $rsync?->successful();
-
-        // `ssh` itself (not the remote command it ran) exits 255 specifically when the
-        // connection drops or fails mid-session — distinct from `command -v rsync`'s own
-        // exit code, which the just-succeeded connection check already proved reachable.
-        // Reporting that as "not found on remote" would misdiagnose a second, unrelated
-        // connection failure as a missing binary.
-        $rsyncFailureReason = $rsync?->exitCode() === 255 ? 'SSH connection failed unexpectedly' : 'not found on remote';
-        $rows[] = [$remote->name, 'Remote rsync', $this->resultLabel($rsyncAvailable, $rsyncFailureReason)];
-
-        return ['rows' => $rows, 'healthy' => $rsyncAvailable === true];
+        return $outcomes;
     }
 
     /**
-     * Run a check (local or over SSH), bounded by `TIMEOUT_SECONDS`. Returns null on a
-     * timeout (rather than a failed `ProcessResult`) to keep a hang distinguishable in
-     * the reported result; returns the full `ProcessResult` otherwise (not just its
-     * `successful()` bool) so a caller can inspect the exit code for a more specific
-     * failure reason, e.g. distinguishing an `ssh`-level failure from the remote
-     * command's own.
+     * Start a check (local or over SSH) without blocking, bounded by `TIMEOUT_SECONDS`.
+     * Returns null if it times out immediately (only reachable under `Process::fake()`,
+     * which resolves a faked timeout eagerly here rather than on `wait()`); a real
+     * process never times out before it has even started.
      *
      * @param  list<string>  $args
      */
-    private function runWithTimeout(array $args): ?ProcessResult
+    private function start(array $args): ?InvokedProcess
     {
         try {
-            return Process::timeout(self::TIMEOUT_SECONDS)->run($args);
+            return Process::timeout(self::TIMEOUT_SECONDS)->start($args);
+        } catch (ProcessTimedOutException) {
+            return null;
+        }
+    }
+
+    /**
+     * Wait for a check started by `start()`, bounded by the same `TIMEOUT_SECONDS`.
+     * Returns null on a timeout (rather than a failed `ProcessResult`) to keep a hang
+     * distinguishable in the reported result; returns the full `ProcessResult`
+     * otherwise (not just its `successful()` bool) so a caller can inspect the exit
+     * code for a more specific failure reason, e.g. distinguishing an `ssh`-level
+     * failure from the remote command's own.
+     */
+    private function wait(?InvokedProcess $process): ?ProcessResult
+    {
+        if (! $process instanceof InvokedProcess) {
+            return null;
+        }
+
+        try {
+            return $process->wait();
         } catch (ProcessTimedOutException) {
             return null;
         }

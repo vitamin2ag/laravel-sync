@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vitamin2\Sync\Ssh;
 
+use Illuminate\Contracts\Process\ProcessResult;
 use Vitamin2\Sync\Data\Remote;
 
 /**
  * The `ssh` invocation shape shared by every value object in this namespace that runs a
  * single command against a remote over SSH (`ConnectionCommand`, `RsyncAvailableCommand`)
- * — both differ only in which command they run once connected.
+ * — both differ only in which command they run once connected — plus the exit-code
+ * classification a caller needs to interpret the `ProcessResult` that comes back.
  */
 final class SshOptions
 {
@@ -38,5 +40,15 @@ final class SshOptions
             "{$remote->user}@{$remote->host}",
             $remoteCommand,
         ];
+    }
+
+    /**
+     * Whether `$result` is `ssh` itself failing (exit 255) rather than the remote command
+     * it ran — distinct from a null `$result`, which already means the check timed out and
+     * is reported that way regardless of this classification.
+     */
+    public static function connectionFailed(?ProcessResult $result): bool
+    {
+        return $result?->exitCode() === 255;
     }
 }
