@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Vitamin2\Sync;
 
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Vitamin2\Sync\Concurrency\SyncLock;
 use Vitamin2\Sync\Data\Backup;
 use Vitamin2\Sync\Data\BackupFolder;
@@ -13,6 +15,7 @@ use Vitamin2\Sync\Data\Recipe;
 use Vitamin2\Sync\Data\Remote;
 use Vitamin2\Sync\Enums\Operation;
 use Vitamin2\Sync\Exceptions\SyncException;
+use Vitamin2\Sync\Rsync\RestoreCommand;
 use Vitamin2\Sync\Rsync\RsyncOptions;
 
 class Sync
@@ -142,14 +145,19 @@ class Sync
     /**
      * Delete a single backup folder, reporting whether it actually succeeded.
      *
-     * `is_link()` is re-checked despite `backups()` filtering symlinks: `sync:backups-clean`'s
-     * prompts leave a window to swap the folder for one, which `File::deleteDirectory()` would
-     * follow. Its return value only reports that the top-level directory existed, so the
-     * delete is verified by re-checking.
+     * Re-checks the folder is still safe to act on immediately before deleting (see
+     * `isUnsafeToActOn()`) — without it, `File::deleteDirectory()` would follow a symlink
+     * (at the leaf or an ancestor) and delete whatever it now points at instead of a real
+     * backup folder.
+     *
+     * `File::deleteDirectory()`'s own return value isn't trustworthy: it reports success
+     * once the top-level directory existed, even when an individual file inside failed to
+     * delete (in which case the directory itself survives, non-empty) — checking the
+     * directory is actually gone afterward is the only reliable signal.
      */
     public function deleteBackup(BackupFolder $folder): bool
     {
-        if (is_link($folder->path)) {
+        if ($this->isUnsafeToActOn($folder)) {
             return false;
         }
 
@@ -159,8 +167,67 @@ class Sync
     }
 
     /**
-     * Older than `$olderThan` days, excluding the `$keep` newest — combining into the
-     * usual "delete anything old, but never the N most recent" rotation.
+     * Restore a backup folder's contents back onto the project root.
+     *
+     * Runs `rsync` directly, not via `PendingSync`: a restore has no remote, recipe, or
+     * rsync-option shape to build one of those from, just a single local copy.
+     *
+     * `isUnsafeToActOn()` is re-checked before *every* command, not once up front: a
+     * mirrored restore runs one per top-level entry (see `restoreCommands()`), and each
+     * is its own window for the folder to be swapped out from under the restore already
+     * in progress — checking only before the first would leave every later one exposed.
+     */
+    public function restoreBackup(BackupFolder $folder, bool $dry, bool $mirror = false, ?Closure $onOutput = null): bool
+    {
+        return $this->restoreCommands($folder, $dry, $mirror)
+            ->map(fn (RestoreCommand $command) => ! $this->isUnsafeToActOn($folder)
+                && Process::forever()->run($command->toArgs(), $onOutput)->successful())
+            ->every(fn (bool $successful) => $successful);
+    }
+
+    /**
+     * One command for the whole backup folder, or, when mirroring, one per its top-level
+     * entry — see `RestoreCommand`'s class docblock for why mirroring can't run as a
+     * single whole-folder call.
+     *
+     * @return Collection<int, RestoreCommand>
+     */
+    private function restoreCommands(BackupFolder $folder, bool $dry, bool $mirror): Collection
+    {
+        if (! $mirror) {
+            return collect([new RestoreCommand($folder, $dry, $mirror)]);
+        }
+
+        return collect($folder->topLevelEntries())
+            ->map(fn (string $entry) => new RestoreCommand($folder, $dry, $mirror, $entry));
+    }
+
+    /**
+     * Whether a backup folder is no longer safe to act on, re-checked right before
+     * `deleteBackup()`/`restoreBackup()` run — an interactive prompt sits between listing
+     * and acting, an arbitrarily long window for the folder to change underneath.
+     *
+     * `is_link()` catches the leaf itself being swapped for a symlink. The canonical-path
+     * comparison catches the other case: `backup_dir` is allowed to be a symlink (see
+     * `guardBackupDirSafe()`), so its *ancestor* can be repointed afterward to a different,
+     * still-real, same-named directory — one `is_link()` on the leaf can't see.
+     */
+    private function isUnsafeToActOn(BackupFolder $folder): bool
+    {
+        if (is_link($folder->path)) {
+            return true;
+        }
+
+        $normalizedReal = BackupFolder::normalizeRealpath(realpath($folder->path));
+
+        return $normalizedReal === null || $folder->canonicalPath === null || $normalizedReal !== $folder->canonicalPath;
+    }
+
+    /**
+     * Select backups by retention criteria: older than `$olderThan` days (if given),
+     * excluding the `$keep` newest (if given) — so the two combine into the common
+     * "delete anything old, but never touch the N most recent" rotation, and `--keep`
+     * alone still works as a plain backup-count cap.
      *
      * `$backups` must already be sorted newest-first, as `backups()` returns it.
      *
@@ -281,8 +348,8 @@ class Sync
             $ancestor = dirname($ancestor);
         }
 
-        $normalizedReal = $this->normalizeRealpath(realpath($ancestor));
-        $normalizedRoot = $this->normalizeRealpath(realpath(base_path()));
+        $normalizedReal = BackupFolder::normalizeRealpath(realpath($ancestor));
+        $normalizedRoot = BackupFolder::normalizeRealpath(realpath(base_path()));
 
         if ($normalizedReal === null || $normalizedRoot === null || ! $this->isPathWithin($normalizedReal, $normalizedRoot)) {
             throw SyncException::backupDirUnsafe($dir);
@@ -312,15 +379,6 @@ class Sync
     public static function resolveExcludesFromPath(string $path): string
     {
         return self::isAbsolutePath($path) ? $path : base_path($path);
-    }
-
-    /**
-     * Normalize a `realpath()` result: separators only, deliberately NOT case-folded (see
-     * `guardBackupDirNotEscapingRootOnDisk()`). A failed `realpath()` becomes `null`.
-     */
-    private function normalizeRealpath(string|false $path): ?string
-    {
-        return $path === false ? null : str_replace('\\', '/', $path);
     }
 
     /**

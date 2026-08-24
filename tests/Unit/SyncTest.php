@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Vitamin2\Sync\Data\Backup;
 use Vitamin2\Sync\Data\BackupFolder;
@@ -594,6 +595,143 @@ it('deletes a backup folder and reports success', function () {
         ->and(File::isDirectory($folder->path))->toBeFalse();
 });
 
+it('restores a backup folder onto the project root', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeTrue();
+
+    Process::assertRan(fn ($process) => in_array("{$folder->path}/", $process->command, true)
+        && in_array(base_path().'/', $process->command, true)
+        && ! in_array('--dry-run', $process->command, true));
+});
+
+it('restores a backup folder with one --delete rsync call per top-level entry when mirroring', function () {
+    // Two entries (a file and a directory) so mirroring must run one rsync call per
+    // entry, not one whole-folder call — a single call would let --delete prune the
+    // *entire* project root down to whatever this backup happened to capture.
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage/app");
+    File::put("{$this->backupPath}/2026-07-24_134530/composer.json", '{}');
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeTrue();
+
+    Process::assertRanTimes(fn ($process) => true, 2);
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true)
+        && in_array("{$folder->path}/composer.json", $process->command, true)
+        && in_array(base_path('composer.json'), $process->command, true));
+
+    Process::assertRan(fn ($process) => in_array('--delete', $process->command, true)
+        && in_array("{$folder->path}/storage/", $process->command, true)
+        && in_array(base_path('storage').'/', $process->command, true));
+});
+
+it('reports failure when mirroring and any per-entry restore fails, without stopping the rest', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage");
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/public");
+    Process::fake([
+        '*storage*' => Process::result(exitCode: 1),
+        '*' => Process::result(exitCode: 0),
+    ]);
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeFalse();
+
+    Process::assertRanTimes(fn ($process) => true, 2);
+});
+
+it('re-checks safety before each per-entry restore, catching a swap that happens mid-restore', function () {
+    // "public" sorts before "storage", so it's the first entry restored. Its own fake
+    // handler swaps the backup folder's leaf for a symlink as a side effect, simulating
+    // the folder being tampered with between this restore's own rsync calls — a window
+    // a check made only once, before the whole mirror loop, would miss entirely.
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/public");
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage");
+
+    $folder = resolve(Sync::class)->backups()->sole();
+    $outside = sys_get_temp_dir().'/sync-outside-'.Str::random(8);
+    File::ensureDirectoryExists($outside);
+
+    Process::fake(function ($process) use ($folder, $outside) {
+        if (in_array(base_path('public').'/', $process->command, true)) {
+            File::deleteDirectory($folder->path);
+
+            if (! @symlink($outside, $folder->path)) {
+                File::deleteDirectory($outside);
+                test()->markTestSkipped('This environment does not support creating symlinks.');
+            }
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeFalse();
+
+        // "public" ran before the swap; "storage" must never run — its own pre-run
+        // isUnsafeToActOn() check has to catch the swap "public"'s fake just made.
+        Process::assertRanTimes(fn ($process) => true, 1);
+        Process::assertNotRan(fn ($process) => in_array(base_path('storage').'/', $process->command, true));
+    } finally {
+        @unlink($folder->path);
+        File::deleteDirectory($outside);
+    }
+});
+
+it('restores a backup folder without --delete by default', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeTrue();
+
+    Process::assertRan(fn ($process) => ! in_array('--delete', $process->command, true));
+});
+
+it('restores a backup folder as a dry run, adding --dry-run', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: true))->toBeTrue();
+
+    Process::assertRan(fn ($process) => in_array('--dry-run', $process->command, true));
+});
+
+it('reports failure when the restore process fails', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake(fn () => Process::result(exitCode: 1));
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse();
+});
+
+it('refuses to restore a backup folder that has been replaced by a symlink since it was listed', function () {
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
+    Process::fake();
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    File::deleteDirectory($folder->path);
+
+    // Not `File::link()`: creating a symlink needs a privilege CI's Windows runners
+    // don't grant by default, so this skips (rather than failing for an unrelated
+    // reason) wherever the environment can't actually create one.
+    if (! @symlink(base_path(), $folder->path)) {
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse();
+
+        Process::assertNothingRan();
+    } finally {
+        @unlink($folder->path);
+    }
+});
+
 it('refuses to delete a backup folder that has been replaced by a symlink since it was listed', function () {
     // Simulates the race sync:backups-clean's interactive prompts leave open: the
     // folder was a real directory when backups() listed it, but is a symlink by the
@@ -618,6 +756,95 @@ it('refuses to delete a backup folder that has been replaced by a symlink since 
     } finally {
         @unlink($folder->path);
         File::deleteDirectory($target);
+    }
+});
+
+it('refuses to act on a backup folder whose parent backup_dir symlink was repointed outside the project since it was listed', function () {
+    // guardBackupDirSafe() explicitly allows backup_dir to be a symlink, as long as it
+    // resolves inside the project when validated (at listing time, inside backups()).
+    // If that symlink is later repointed outside the project, the *leaf* backup folder
+    // it now resolves through can still be a perfectly real directory — is_link() on
+    // the leaf alone can't catch this, only comparing its real path against the one
+    // captured at listing time (BackupFolder::$canonicalPath) can.
+    $inside = "{$this->backupPath}-inside";
+    File::ensureDirectoryExists("{$inside}/2026-07-24_134530");
+
+    $linkDir = 'sync-backups-symlink-'.Str::random(8);
+    $linkPath = base_path($linkDir);
+
+    if (! @symlink($inside, $linkPath)) {
+        File::deleteDirectory($inside);
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    config(['sync.backup_dir' => $linkDir]);
+    Process::fake();
+
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    $outside = sys_get_temp_dir().'/sync-outside-'.Str::random(8);
+    File::ensureDirectoryExists("{$outside}/2026-07-24_134530");
+
+    // Repoint the backup_dir symlink itself — the ancestor, not the listed folder's
+    // own leaf, which stays a real (non-symlink) directory throughout. Both removal
+    // calls are attempted, suppressed: a directory-target symlink needs unlink() on
+    // POSIX but rmdir() on Windows (where it's materialized as a directory junction),
+    // and using the wrong one silently no-ops instead of failing loudly.
+    @unlink($linkPath);
+    @rmdir($linkPath);
+    @symlink($outside, $linkPath);
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse()
+            ->and(resolve(Sync::class)->deleteBackup($folder))->toBeFalse();
+
+        Process::assertNothingRan();
+    } finally {
+        @unlink($linkPath);
+        @rmdir($linkPath);
+        File::deleteDirectory($inside);
+        File::deleteDirectory($outside);
+    }
+});
+
+it('refuses to act on a backup folder whose parent backup_dir symlink was repointed to a different location still inside the project', function () {
+    // A root-containment check alone would pass here: the repointed target is a real,
+    // same-named directory, and it's still inside the project. Only comparing against
+    // the canonical path captured at listing time (BackupFolder::$canonicalPath) can
+    // tell the two apart.
+    $inside = "{$this->backupPath}-inside";
+    File::ensureDirectoryExists("{$inside}/2026-07-24_134530");
+
+    $linkDir = 'sync-backups-symlink-'.Str::random(8);
+    $linkPath = base_path($linkDir);
+
+    if (! @symlink($inside, $linkPath)) {
+        File::deleteDirectory($inside);
+        $this->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    config(['sync.backup_dir' => $linkDir]);
+    Process::fake();
+
+    $folder = resolve(Sync::class)->backups()->sole();
+
+    $elsewhereInside = base_path('sync-backups-elsewhere-'.Str::random(8));
+    File::ensureDirectoryExists("{$elsewhereInside}/2026-07-24_134530");
+
+    @unlink($linkPath);
+    @rmdir($linkPath);
+    @symlink($elsewhereInside, $linkPath);
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false))->toBeFalse()
+            ->and(resolve(Sync::class)->deleteBackup($folder))->toBeFalse();
+
+        Process::assertNothingRan();
+    } finally {
+        @unlink($linkPath);
+        @rmdir($linkPath);
+        File::deleteDirectory($inside);
+        File::deleteDirectory($elsewhereInside);
     }
 });
 

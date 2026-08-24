@@ -20,6 +20,7 @@ final readonly class BackupFolder
         public string $path,
         public int $size,
         public Carbon $createdAt,
+        public ?string $canonicalPath,
     ) {}
 
     /**
@@ -44,6 +45,10 @@ final readonly class BackupFolder
      * `$size` is a callback, not a plain value, so an invalid folder name is rejected
      * before paying for its recursive size calculation.
      *
+     * `canonicalPath` pins the folder's real, symlink-resolved location at this moment —
+     * the identity `Sync::isUnsafeToActOn()` re-checks against before acting, so a later
+     * repoint can't be mistaken for the folder that was actually listed.
+     *
      * @param  callable(): int  $size
      */
     public static function tryFromPath(string $path, callable $size): ?self
@@ -55,7 +60,44 @@ final readonly class BackupFolder
             return null;
         }
 
-        return new self(name: $name, path: $path, size: $size(), createdAt: Date::instance($parsed));
+        return new self(
+            name: $name,
+            path: $path,
+            size: $size(),
+            createdAt: Date::instance($parsed),
+            canonicalPath: self::normalizeRealpath(realpath($path)),
+        );
+    }
+
+    /**
+     * Normalize a `realpath()` result: separators only, deliberately NOT case-folded — a
+     * symlink into a case-differing sibling must still compare as "outside". A failed
+     * `realpath()` becomes `null`.
+     *
+     * Shared with `Sync`'s own real-path comparisons (`isUnsafeToActOn()`,
+     * `guardBackupDirNotEscapingRootOnDisk()`) so both sides of every comparison are
+     * normalized identically.
+     */
+    public static function normalizeRealpath(string|false $path): ?string
+    {
+        return $path === false ? null : str_replace('\\', '/', $path);
+    }
+
+    /**
+     * The folder's own top-level entries (dirs and files), sorted for determinism.
+     * `Sync::restoreBackup()`'s mirror mode scopes `--delete` to these, one `rsync` call
+     * per entry — see `RestoreCommand`'s class docblock for why a single whole-folder
+     * call can't do this safely.
+     *
+     * @return list<string>
+     */
+    public function topLevelEntries(): array
+    {
+        $entries = array_diff((@scandir($this->path)) ?: [], ['.', '..']);
+
+        sort($entries);
+
+        return $entries;
     }
 
     /**
