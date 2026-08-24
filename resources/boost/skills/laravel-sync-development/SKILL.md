@@ -67,6 +67,10 @@ together:
 ],
 ```
 
+Unlike `excludes_from` below, a recipe path must be relative — it's appended to both the local and remote root,
+so an absolute one (e.g. `storage_path('app/assets')`) has no sensible remote counterpart and is refused with a
+clear error before anything is synced.
+
 ### 4. Set default rsync options (optional)
 
 ```php
