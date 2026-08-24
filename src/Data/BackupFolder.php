@@ -60,15 +60,27 @@ final readonly class BackupFolder
             return null;
         }
 
-        $realPath = realpath($path);
-
         return new self(
             name: $name,
             path: $path,
             size: $size(),
             createdAt: Date::instance($parsed),
-            canonicalPath: $realPath === false ? null : str_replace('\\', '/', $realPath),
+            canonicalPath: self::normalizeRealpath(realpath($path)),
         );
+    }
+
+    /**
+     * Normalize a `realpath()` result: separators only, deliberately NOT case-folded — a
+     * symlink into a case-differing sibling must still compare as "outside". A failed
+     * `realpath()` becomes `null`.
+     *
+     * Shared with `Sync`'s own real-path comparisons (`isUnsafeToActOn()`,
+     * `guardBackupDirNotEscapingRootOnDisk()`) so both sides of every comparison are
+     * normalized identically.
+     */
+    public static function normalizeRealpath(string|false $path): ?string
+    {
+        return $path === false ? null : str_replace('\\', '/', $path);
     }
 
     /**

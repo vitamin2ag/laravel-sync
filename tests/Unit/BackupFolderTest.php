@@ -85,6 +85,11 @@ it('leaves canonicalPath null for a folder that does not exist on disk', functio
     expect($folder->canonicalPath)->toBeNull();
 });
 
+it('normalizes separators without case-folding, and maps a failed realpath() to null', function () {
+    expect(BackupFolder::normalizeRealpath(false))->toBeNull()
+        ->and(BackupFolder::normalizeRealpath('C:\\Projects\\App'))->toBe('C:/Projects/App');
+});
+
 it('lists the backup folder\'s own top-level entries, sorted', function () {
     $dir = base_path('.sync-backups-'.Str::random(8));
     File::ensureDirectoryExists("{$dir}/2026-07-24_134530/storage/app");

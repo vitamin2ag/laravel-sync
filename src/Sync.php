@@ -217,7 +217,7 @@ class Sync
             return true;
         }
 
-        $normalizedReal = $this->normalizeRealpath(realpath($folder->path));
+        $normalizedReal = BackupFolder::normalizeRealpath(realpath($folder->path));
 
         return $normalizedReal === null || $folder->canonicalPath === null || $normalizedReal !== $folder->canonicalPath;
     }
@@ -347,8 +347,8 @@ class Sync
             $ancestor = dirname($ancestor);
         }
 
-        $normalizedReal = $this->normalizeRealpath(realpath($ancestor));
-        $normalizedRoot = $this->normalizeRealpath(realpath(base_path()));
+        $normalizedReal = BackupFolder::normalizeRealpath(realpath($ancestor));
+        $normalizedRoot = BackupFolder::normalizeRealpath(realpath(base_path()));
 
         if ($normalizedReal === null || $normalizedRoot === null || ! $this->isPathWithin($normalizedReal, $normalizedRoot)) {
             throw SyncException::backupDirUnsafe($dir);
@@ -378,15 +378,6 @@ class Sync
     public static function resolveExcludesFromPath(string $path): string
     {
         return self::isAbsolutePath($path) ? $path : base_path($path);
-    }
-
-    /**
-     * Normalize a `realpath()` result: separators only, deliberately NOT case-folded (see
-     * `guardBackupDirNotEscapingRootOnDisk()`). A failed `realpath()` becomes `null`.
-     */
-    private function normalizeRealpath(string|false $path): ?string
-    {
-        return $path === false ? null : str_replace('\\', '/', $path);
     }
 
     /**
