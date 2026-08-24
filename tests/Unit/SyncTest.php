@@ -179,6 +179,51 @@ it('refuses to sync a path with itself even when the remote root only differs by
     $sync->prepare(Operation::Push, $sync->remote('here'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
 })->throws(SyncException::class);
 
+it('refuses an absolute unix-style recipe path', function () {
+    config(['sync.recipes' => ['assets' => ['/etc/passwd']]]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+})->throws(
+    SyncException::class,
+    'The path "/etc/passwd" in recipe "assets" is absolute. Recipe paths must be relative to the project root.',
+);
+
+it('refuses an absolute windows-style recipe path', function () {
+    config(['sync.recipes' => ['assets' => ['C:/inetpub/wwwroot']]]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+})->throws(
+    SyncException::class,
+    'The path "C:/inetpub/wwwroot" in recipe "assets" is absolute. Recipe paths must be relative to the project root.',
+);
+
+it('allows a recipe path that merely starts with a drive-letter-like prefix', function () {
+    // "x:rules" is a relative POSIX filename, not a Windows-absolute path — only "x:/..."
+    // (letter, colon, separator) is absolute.
+    config(['sync.recipes' => ['assets' => ['x:rules']]]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->prepare(Operation::Push, $sync->remote('staging'), collect([$sync->recipe('assets')]), new RsyncOptions([]));
+})->throwsNoExceptions();
+
+it('only checks recipe paths for the recipes being synced, not every configured recipe', function () {
+    config([
+        'sync.recipes' => [
+            'assets' => ['storage/app/assets/'],
+            'env' => ['/etc/passwd'],
+        ],
+    ]);
+
+    $sync = resolve(Sync::class);
+
+    $sync->guardRecipePathsAreRelative(collect([$sync->recipe('assets')]));
+})->throwsNoExceptions();
+
 it('allows a recipe whose excludes-from file exists', function () {
     $file = 'storage/app/.rsync-excludes-'.Str::random(8);
     config(['sync.excludes_from' => ['assets' => [$file]]]);
