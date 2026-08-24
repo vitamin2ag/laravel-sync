@@ -108,7 +108,7 @@ class SyncDoctorCommand extends Command
         $outcomes = [new CheckOutcome(
             '-',
             'Local rsync',
-            $localAvailable === true ? 'OK' : $this->resultLabel($localAvailable, $this->localFailureReason($localResult)),
+            $this->resultLabel($localAvailable, $this->localFailureReason($localResult)),
             $localAvailable === true,
         )];
 
@@ -133,7 +133,7 @@ class SyncDoctorCommand extends Command
             $outcomes[] = new CheckOutcome(
                 $remote->name,
                 'SSH connection',
-                $isConnected ? 'OK' : $this->resultLabel($connectionResult?->successful(), $this->connectionFailureReason($connectionResult)),
+                $this->resultLabel($connectionResult?->successful(), $this->connectionFailureReason($connectionResult)),
                 $isConnected,
             );
 
@@ -149,7 +149,7 @@ class SyncDoctorCommand extends Command
             $outcomes[] = new CheckOutcome(
                 $remote->name,
                 'Remote rsync',
-                $rsyncAvailable === true ? 'OK' : $this->resultLabel($rsyncAvailable, $this->rsyncFailureReason($rsync)),
+                $this->resultLabel($rsyncAvailable, $this->rsyncFailureReason($rsync)),
                 $rsyncAvailable === true,
             );
         }
