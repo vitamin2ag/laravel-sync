@@ -77,12 +77,9 @@ final readonly class RestoreCommand
     }
 
     /**
-     * Whether a backup entry should get directory (trailing-slash, merge-contents)
-     * treatment — a real directory, but never a symlink, even one pointing at a
-     * directory. `is_dir()` alone follows symlinks: passed with a trailing slash, rsync
-     * would then sync from wherever the symlink currently resolves (a shared/deploy path
-     * outside the project, say) instead of restoring the symlink entry itself, and
-     * `--mirror`'s `--delete` would prune the target against that live, unrelated tree.
+     * Whether an entry gets directory (trailing-slash, merge-contents) treatment — a
+     * real directory, never a symlink: `is_dir()` alone follows symlinks, which would
+     * sync from wherever the link currently resolves instead of restoring it as-is.
      */
     private function isDirectoryEntry(string $path): bool
     {
