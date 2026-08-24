@@ -22,22 +22,13 @@ class SyncBackupsRestoreCommand extends Command
 {
     use ConfirmsUnlessSkipped;
 
-    /**
-     * The command signature.
-     */
     protected $signature = 'sync:backups-restore
         {backup? : The backup to restore}
         {--D|dry : Preview what would be restored, without restoring anything}
         {--F|force : Skip the confirmation prompt}';
 
-    /**
-     * The command description.
-     */
     protected $description = 'Restore a backup folder\'s contents back onto the project root';
 
-    /**
-     * Execute the console command.
-     */
     public function handle(): int
     {
         $sync = resolve(Sync::class);
