@@ -8,8 +8,8 @@ use Stringable;
 use Vitamin2\Sync\Data\Remote;
 
 /**
- * An `ssh` connectivity check for `sync:test-connection` — authenticates and confirms
- * the remote's `root` exists, in one round trip.
+ * An `ssh` connectivity check shared by `sync:test-connection` and `sync:doctor` —
+ * authenticates and confirms the remote's `root` exists, in one round trip.
  */
 final readonly class ConnectionCommand implements Stringable
 {

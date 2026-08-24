@@ -80,9 +80,6 @@ class SyncDoctorCommand extends Command
     }
 
     /**
-     * Resolve the remotes to check: every configured remote with `--all`, the single
-     * `remote` argument (or an interactive prompt for it) otherwise.
-     *
      * @return Collection<int, Remote>
      */
     private function resolveRemotes(Sync $sync): Collection
