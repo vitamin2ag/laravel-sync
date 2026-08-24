@@ -102,6 +102,34 @@ it('scopes a file entry to an exact copy, no trailing slash on either side', fun
     }
 });
 
+it('scopes a symlink entry pointing at a directory to an exact copy, not a dereferenced merge', function () {
+    // is_dir() alone follows symlinks, so a naive check would trailing-slash this and
+    // let rsync sync from wherever the symlink currently resolves (potentially outside
+    // the project) instead of restoring the symlink itself.
+    $backupDir = base_path('.sync-backups-'.Str::random(8));
+    File::ensureDirectoryExists("{$backupDir}/2026-07-24_134530");
+    $target = sys_get_temp_dir().'/sync-outside-'.Str::random(8);
+    File::ensureDirectoryExists($target);
+
+    if (! @symlink($target, "{$backupDir}/2026-07-24_134530/storage")) {
+        File::deleteDirectory($backupDir);
+        File::deleteDirectory($target);
+        test()->markTestSkipped('This environment does not support creating symlinks.');
+    }
+
+    try {
+        $backup = BackupFolder::fromPath("{$backupDir}/2026-07-24_134530", 0);
+        $command = new RestoreCommand($backup, mirror: true, entry: 'storage');
+
+        expect($command->origin())->toBe("{$backupDir}/2026-07-24_134530/storage")
+            ->and($command->target())->toBe(base_path('storage'));
+    } finally {
+        @unlink("{$backupDir}/2026-07-24_134530/storage");
+        File::deleteDirectory($backupDir);
+        File::deleteDirectory($target);
+    }
+});
+
 it('collapses a trailing slash on the backup folder path instead of doubling it', function () {
     $backup = BackupFolder::fromPath(base_path('.sync-backups/2026-07-24_134530/'), 0);
     $command = new RestoreCommand($backup);

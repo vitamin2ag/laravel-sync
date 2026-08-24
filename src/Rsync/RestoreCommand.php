@@ -47,7 +47,7 @@ final readonly class RestoreCommand
      * slash unconditional, as before), or, scoped to one of its top-level entries (see
      * the class docblock), just that entry — trailing slash only when the entry itself
      * is a directory, so a mirrored entry merges into the target instead of nesting
-     * under it; a file entry is copied as-is.
+     * under it; a file entry (or a symlink — see `isDirectoryEntry()`) is copied as-is.
      */
     public function origin(): string
     {
@@ -57,7 +57,7 @@ final readonly class RestoreCommand
 
         $path = rtrim("{$this->backup->path}/{$this->entry}", '/');
 
-        return is_dir($path) ? "{$path}/" : $path;
+        return $this->isDirectoryEntry($path) ? "{$path}/" : $path;
     }
 
     /**
@@ -73,7 +73,20 @@ final readonly class RestoreCommand
 
         $path = rtrim("{$this->backup->path}/{$this->entry}", '/');
 
-        return is_dir($path) ? rtrim(base_path($this->entry), '/').'/' : base_path($this->entry);
+        return $this->isDirectoryEntry($path) ? rtrim(base_path($this->entry), '/').'/' : base_path($this->entry);
+    }
+
+    /**
+     * Whether a backup entry should get directory (trailing-slash, merge-contents)
+     * treatment — a real directory, but never a symlink, even one pointing at a
+     * directory. `is_dir()` alone follows symlinks: passed with a trailing slash, rsync
+     * would then sync from wherever the symlink currently resolves (a shared/deploy path
+     * outside the project, say) instead of restoring the symlink entry itself, and
+     * `--mirror`'s `--delete` would prune the target against that live, unrelated tree.
+     */
+    private function isDirectoryEntry(string $path): bool
+    {
+        return ! is_link($path) && is_dir($path);
     }
 
     /**
