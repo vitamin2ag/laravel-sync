@@ -14,7 +14,7 @@ push or pull files and folders between environments (e.g. local, staging, produc
 
 ## Primary Goal
 
-- apply the `vitamin2/laravel-sync` package's public API (config, `sync`, `sync:list`, `sync:commands`, `sync:backups-clean`, `sync:test-connection`) in the smallest correct way
+- apply the `vitamin2/laravel-sync` package's public API (config, `sync`, `sync:list`, `sync:commands`, `sync:backups-clean`, `sync:backups-restore`, `sync:test-connection`) in the smallest correct way
 
 ## Prerequisites
 
