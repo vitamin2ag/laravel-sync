@@ -27,10 +27,16 @@ final readonly class Recipe
         public array $excludes = [],
         array $excludesFrom = [],
     ) {
-        $this->excludesFrom = array_map(
-            fn (string $path) => str_replace('\\', '/', trim($path)),
-            $excludesFrom,
-        );
+        $this->excludesFrom = array_map(self::normalizePathSeparators(...), $excludesFrom);
+    }
+
+    /**
+     * Trim and `/`-normalize a path, shared with `Sync::guardBackupDirSafe()` so both sites
+     * that must agree on a path's segments normalize identically.
+     */
+    public static function normalizePathSeparators(string $path): string
+    {
+        return str_replace('\\', '/', trim($path));
     }
 
     /**

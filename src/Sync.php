@@ -199,7 +199,7 @@ class Sync
      */
     public function guardBackupDirSafe(string $dir): string
     {
-        $normalized = str_replace('\\', '/', trim($dir));
+        $normalized = Recipe::normalizePathSeparators($dir);
 
         if (self::isAbsolutePath($normalized)) {
             throw SyncException::backupDirUnsafe($dir);
