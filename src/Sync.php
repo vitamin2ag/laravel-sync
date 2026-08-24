@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Vitamin2\Sync;
 
 use Closure;
-use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -172,16 +171,18 @@ class Sync
      *
      * Runs `rsync` directly, not via `PendingSync`: a restore has no remote, recipe, or
      * rsync-option shape to build one of those from, just a single local copy.
+     *
+     * `isUnsafeToActOn()` is re-checked before *every* command, not once up front: a
+     * mirrored restore runs one per top-level entry (see `restoreCommands()`), and each
+     * is its own window for the folder to be swapped out from under the restore already
+     * in progress — checking only before the first would leave every later one exposed.
      */
     public function restoreBackup(BackupFolder $folder, bool $dry, bool $mirror = false, ?Closure $onOutput = null): bool
     {
-        if ($this->isUnsafeToActOn($folder)) {
-            return false;
-        }
-
         return $this->restoreCommands($folder, $dry, $mirror)
-            ->map(fn (RestoreCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
-            ->every(fn (ProcessResult $result) => $result->successful());
+            ->map(fn (RestoreCommand $command) => ! $this->isUnsafeToActOn($folder)
+                && Process::forever()->run($command->toArgs(), $onOutput)->successful())
+            ->every(fn (bool $successful) => $successful);
     }
 
     /**

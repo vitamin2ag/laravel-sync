@@ -643,6 +643,44 @@ it('reports failure when mirroring and any per-entry restore fails, without stop
     Process::assertRanTimes(fn ($process) => true, 2);
 });
 
+it('re-checks safety before each per-entry restore, catching a swap that happens mid-restore', function () {
+    // "public" sorts before "storage", so it's the first entry restored. Its own fake
+    // handler swaps the backup folder's leaf for a symlink as a side effect, simulating
+    // the folder being tampered with between this restore's own rsync calls — a window
+    // a check made only once, before the whole mirror loop, would miss entirely.
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/public");
+    File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530/storage");
+
+    $folder = resolve(Sync::class)->backups()->sole();
+    $outside = sys_get_temp_dir().'/sync-outside-'.Str::random(8);
+    File::ensureDirectoryExists($outside);
+
+    Process::fake(function ($process) use ($folder, $outside) {
+        if (in_array(base_path('public').'/', $process->command, true)) {
+            File::deleteDirectory($folder->path);
+
+            if (! @symlink($outside, $folder->path)) {
+                File::deleteDirectory($outside);
+                test()->markTestSkipped('This environment does not support creating symlinks.');
+            }
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    try {
+        expect(resolve(Sync::class)->restoreBackup($folder, dry: false, mirror: true))->toBeFalse();
+
+        // "public" ran before the swap; "storage" must never run — its own pre-run
+        // isUnsafeToActOn() check has to catch the swap "public"'s fake just made.
+        Process::assertRanTimes(fn ($process) => true, 1);
+        Process::assertNotRan(fn ($process) => in_array(base_path('storage').'/', $process->command, true));
+    } finally {
+        @unlink($folder->path);
+        File::deleteDirectory($outside);
+    }
+});
+
 it('restores a backup folder without --delete by default', function () {
     File::ensureDirectoryExists("{$this->backupPath}/2026-07-24_134530");
     Process::fake();
