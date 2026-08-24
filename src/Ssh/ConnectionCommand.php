@@ -8,18 +8,11 @@ use Stringable;
 use Vitamin2\Sync\Data\Remote;
 
 /**
- * An `ssh` connectivity check for `sync:test-connection` — authenticates and confirms
- * the remote's `root` exists, in one round trip.
+ * An `ssh` connectivity check shared by `sync:test-connection` and `sync:doctor` —
+ * authenticates and confirms the remote's `root` exists, in one round trip.
  */
 final readonly class ConnectionCommand implements Stringable
 {
-    /**
-     * Fail fast instead of hanging: `BatchMode=yes` rules out an interactive password
-     * prompt (agent/key auth only, like every other command here), `ConnectTimeout=5`
-     * bounds the handshake.
-     */
-    private const array SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5'];
-
     public function __construct(
         public Remote $remote,
     ) {}
@@ -40,13 +33,7 @@ final readonly class ConnectionCommand implements Stringable
      */
     public function toArgs(): array
     {
-        return [
-            'ssh',
-            ...self::SSH_OPTIONS,
-            '-p', (string) $this->remote->port,
-            "{$this->remote->user}@{$this->remote->host}",
-            "test -d {$this->escapeRemotePath($this->root())}",
-        ];
+        return SshOptions::command($this->remote, "test -d {$this->escapeRemotePath($this->root())}");
     }
 
     /**
