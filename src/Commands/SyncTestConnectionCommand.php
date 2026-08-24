@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Vitamin2\Sync\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Process\Exceptions\ProcessTimedOutException;
-use Illuminate\Support\Facades\Process;
+use Illuminate\Contracts\Process\ProcessResult;
 use Vitamin2\Sync\Commands\Concerns\ResolvesRemote;
 use Vitamin2\Sync\Exceptions\SyncException;
 use Vitamin2\Sync\Ssh\ConnectionCommand;
+use Vitamin2\Sync\Ssh\SshOptions;
 
 /**
  * Uses `ResolvesRemote`, not the full `ResolvesSyncInput`: this command resolves only a
@@ -19,12 +19,6 @@ use Vitamin2\Sync\Ssh\ConnectionCommand;
 class SyncTestConnectionCommand extends Command
 {
     use ResolvesRemote;
-
-    /**
-     * Bounds the whole SSH round trip, on top of `ConnectionCommand`'s own `ConnectTimeout`,
-     * in case the remote command hangs once connected.
-     */
-    private const int TIMEOUT_SECONDS = 10;
 
     protected $signature = 'sync:test-connection
         {remote? : The remote to test}';
@@ -49,13 +43,13 @@ class SyncTestConnectionCommand extends Command
 
         $this->comment(sprintf('Connecting to "%s@%s:%d"...', $remote->user, $remote->host, $remote->port));
 
-        try {
-            $result = Process::timeout(self::TIMEOUT_SECONDS)->run((new ConnectionCommand($remote))->toArgs());
-        } catch (ProcessTimedOutException) {
+        $result = SshOptions::run((new ConnectionCommand($remote))->toArgs());
+
+        if (! $result instanceof ProcessResult) {
             $this->error(sprintf(
                 'Connecting to "%s" timed out after %d seconds.',
                 $remote->name,
-                self::TIMEOUT_SECONDS,
+                SshOptions::TIMEOUT_SECONDS,
             ));
 
             return self::FAILURE;
