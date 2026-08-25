@@ -56,11 +56,12 @@ it('falls back to config default options when --option is passed an empty string
 });
 
 it('fails when the underlying rsync process fails', function () {
-    Process::fake(fn () => Process::result(exitCode: 1));
+    Process::fake(fn () => Process::result(errorOutput: 'rsync: --delete does not work without --recursive or --dirs', exitCode: 1));
 
     $this->artisan('sync', [
         'operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true,
     ])
+        ->expectsOutputToContain('rsync: --delete does not work without --recursive or --dirs')
         ->expectsOutputToContain('Sync failed.')
         ->assertFailed();
 });
