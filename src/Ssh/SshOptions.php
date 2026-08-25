@@ -22,11 +22,13 @@ final class SshOptions
      * Fail fast instead of hanging: `BatchMode=yes` disables interactive/password auth
      * entirely (agent/key auth only, matching how every other command in this package
      * connects), and `ConnectTimeout=5` bounds how long the initial handshake itself is
-     * allowed to take.
+     * allowed to take. `StrictHostKeyChecking=accept-new` auto-trusts a host key seen for
+     * the first time (otherwise `BatchMode=yes` turns that prompt into a hard failure) while
+     * still rejecting a host key that changed from what's already in `known_hosts`.
      *
      * @var list<string>
      */
-    public const array DEFAULT = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5'];
+    public const array DEFAULT = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new'];
 
     /**
      * Bounds a whole check (an SSH round trip, or a plain local command run the same
