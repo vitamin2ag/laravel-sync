@@ -19,7 +19,7 @@ it('builds an argument list without shell interpretation', function () {
 
     expect($command->toArgs())->toBe([
         'ssh',
-        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new',
         '-p', '2222',
         'forge@104.26.3.113',
         'command -v rsync',
@@ -30,6 +30,6 @@ it('renders the command as a space separated string', function () {
     $command = new RsyncAvailableCommand($this->remote);
 
     expect((string) $command)->toBe(
-        'ssh -o BatchMode=yes -o ConnectTimeout=5 -p 2222 forge@104.26.3.113 command -v rsync',
+        'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p 2222 forge@104.26.3.113 command -v rsync',
     );
 });

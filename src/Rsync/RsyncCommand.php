@@ -8,6 +8,7 @@ use Illuminate\Contracts\Support\Arrayable;
 use Stringable;
 use Vitamin2\Sync\Data\Remote;
 use Vitamin2\Sync\Enums\Operation;
+use Vitamin2\Sync\Ssh\SshOptions;
 
 /**
  * @implements Arrayable<string, string>
@@ -84,6 +85,6 @@ final readonly class RsyncCommand implements Arrayable, Stringable
      */
     private function sshFlag(): string
     {
-        return "ssh -p {$this->remote->port}";
+        return "ssh -p {$this->remote->port} -o ".SshOptions::ACCEPT_NEW_HOST_KEY;
     }
 }

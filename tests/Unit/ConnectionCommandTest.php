@@ -19,7 +19,7 @@ it('builds an argument list without shell interpretation of paths or options', f
 
     expect($command->toArgs())->toBe([
         'ssh',
-        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new',
         '-p', '2222',
         'forge@104.26.3.113',
         "test -d '/home/forge/example.com'",
@@ -30,7 +30,7 @@ it('renders the command as a space separated string', function () {
     $command = new ConnectionCommand($this->remote);
 
     expect((string) $command)->toBe(
-        "ssh -o BatchMode=yes -o ConnectTimeout=5 -p 2222 forge@104.26.3.113 test -d '/home/forge/example.com'",
+        "ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p 2222 forge@104.26.3.113 test -d '/home/forge/example.com'",
     );
 });
 

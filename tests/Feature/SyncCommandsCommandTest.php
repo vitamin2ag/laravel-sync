@@ -20,7 +20,7 @@ beforeEach(function () {
 it('prints the rsync command for a push without running it', function () {
     $this->artisan('sync:commands', ['operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true])
         ->expectsOutputToContain(sprintf(
-            "rsync -e 'ssh -p 22' --archive %s forge@5.6.7.8:/srv/staging/storage/app/assets/",
+            "rsync -e 'ssh -p 22 -o StrictHostKeyChecking=accept-new' --archive %s forge@5.6.7.8:/srv/staging/storage/app/assets/",
             base_path('storage/app/assets/'),
         ))
         ->assertSuccessful();
@@ -29,7 +29,7 @@ it('prints the rsync command for a push without running it', function () {
 it('reverses origin and target for a pull', function () {
     $this->artisan('sync:commands', ['operation' => 'pull', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true])
         ->expectsOutputToContain(sprintf(
-            "rsync -e 'ssh -p 22' --archive forge@5.6.7.8:/srv/staging/storage/app/assets/ %s",
+            "rsync -e 'ssh -p 22 -o StrictHostKeyChecking=accept-new' --archive forge@5.6.7.8:/srv/staging/storage/app/assets/ %s",
             base_path('storage/app/assets/'),
         ))
         ->assertSuccessful();
@@ -53,7 +53,7 @@ it('prints the backup command before the pull command when --backup is passed', 
             base_path('.sync-backups/2026-07-24_134530'),
         ))
         ->expectsOutputToContain(sprintf(
-            "rsync -e 'ssh -p 22' --archive forge@5.6.7.8:/srv/staging/storage/app/assets/ %s",
+            "rsync -e 'ssh -p 22 -o StrictHostKeyChecking=accept-new' --archive forge@5.6.7.8:/srv/staging/storage/app/assets/ %s",
             base_path('storage/app/assets/'),
         ))
         ->assertSuccessful();
