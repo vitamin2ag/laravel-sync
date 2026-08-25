@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vitamin2\Sync\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult;
 use Vitamin2\Sync\Commands\Concerns\ConfirmsUnlessSkipped;
 use Vitamin2\Sync\Commands\Concerns\ResolvesSyncInput;
 use Vitamin2\Sync\Data\Backup;
@@ -66,18 +67,19 @@ class SyncCommand extends Command
 
         $shouldStreamOutput = $dry || $pending->options->producesOutput();
         $onOutput = $shouldStreamOutput ? fn (string $type, string $output) => $this->output->write($output) : null;
+        $onFailure = $shouldStreamOutput ? null : $this->reportProcessFailure(...);
 
         if ($pending->backup instanceof Backup) {
             $this->comment('Backing up local files...');
 
-            if (! $pending->runBackup($onOutput)) {
+            if (! $pending->runBackup($onOutput, $onFailure)) {
                 $this->error('Backup failed. Nothing was synced — your local files are untouched.');
 
                 return self::FAILURE;
             }
         }
 
-        if (! $pending->runSync($onOutput)) {
+        if (! $pending->runSync($onOutput, $onFailure)) {
             $this->error($dry ? 'Dry run failed.' : 'Sync failed.');
 
             return self::FAILURE;
@@ -94,6 +96,19 @@ class SyncCommand extends Command
     protected function promptsForBackupConfirmation(): bool
     {
         return true;
+    }
+
+    /**
+     * Only wired in when output wasn't already streamed live — otherwise the process's
+     * own error output already reached the terminal and repeating it here would be noise.
+     */
+    private function reportProcessFailure(ProcessResult $result): void
+    {
+        $output = ($errorOutput = trim($result->errorOutput())) !== '' ? $errorOutput : trim($result->output());
+
+        if ($output !== '') {
+            $this->line($output);
+        }
     }
 
     private function confirmSync(PendingSync $pending): bool

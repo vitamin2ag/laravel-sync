@@ -175,6 +175,36 @@ it('returns false when any command fails', function () {
     Process::assertRanTimes(fn ($process) => true, 2);
 });
 
+it('calls onFailure with the failed process result, but not for successful ones', function () {
+    Process::fake(fn ($process) => in_array(base_path('storage/app/img/'), $process->command, true)
+        ? Process::result(errorOutput: 'boom', exitCode: 1)
+        : Process::result());
+
+    $recipes = collect([new Recipe('assets', ['storage/app/assets/', 'storage/app/img/'])]);
+    $pending = new PendingSync(Operation::Push, $this->remote, $recipes, new RsyncOptions(['--archive']));
+
+    $failures = [];
+    $pending->run(onFailure: function ($result) use (&$failures) {
+        $failures[] = trim((string) $result->errorOutput());
+    });
+
+    expect($failures)->toBe(['boom']);
+});
+
+it('calls onFailure for every failed command, not just the first', function () {
+    Process::fake(fn ($process) => Process::result(errorOutput: implode(' ', $process->command), exitCode: 1));
+
+    $recipes = collect([new Recipe('assets', ['storage/app/assets/', 'storage/app/img/'])]);
+    $pending = new PendingSync(Operation::Push, $this->remote, $recipes, new RsyncOptions(['--archive']));
+
+    $failures = [];
+    $pending->run(onFailure: function ($result) use (&$failures) {
+        $failures[] = $result;
+    });
+
+    expect($failures)->toHaveCount(2);
+});
+
 it('builds no backup commands without a backup', function () {
     $recipes = collect([new Recipe('assets', ['storage/app/assets/'])]);
     $pending = new PendingSync(Operation::Pull, $this->remote, $recipes, new RsyncOptions(['--archive']));

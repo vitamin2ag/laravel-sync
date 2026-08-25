@@ -152,13 +152,13 @@ final readonly class PendingSync
      *
      * @return bool Whether every command completed successfully.
      */
-    public function run(?Closure $onOutput = null): bool
+    public function run(?Closure $onOutput = null, ?Closure $onFailure = null): bool
     {
-        if (! $this->runBackup($onOutput)) {
+        if (! $this->runBackup($onOutput, $onFailure)) {
             return false;
         }
 
-        return $this->runSync($onOutput);
+        return $this->runSync($onOutput, $onFailure);
     }
 
     /**
@@ -167,26 +167,46 @@ final readonly class PendingSync
      * Separate from `run()` so a caller can report a backup failure distinctly from a
      * sync failure.
      *
+     * @param  Closure(ProcessResult): void|null  $onFailure  Called with each failed process's
+     *                                                        result — a command's own output
+     *                                                        isn't otherwise surfaced unless
+     *                                                        `$onOutput` already streamed it.
      * @return bool Whether every backup command completed successfully.
      */
-    public function runBackup(?Closure $onOutput = null): bool
+    public function runBackup(?Closure $onOutput = null, ?Closure $onFailure = null): bool
     {
         return $this->backups()
             ->map(fn (BackupCommand $command) => Process::forever()
                 ->path($command->workingDirectory())
                 ->run($command->toArgs(), $onOutput))
-            ->every(fn (ProcessResult $result) => $result->successful());
+            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->every(fn (bool $success) => $success);
     }
 
     /**
      * Run every rsync command, one process at a time.
      *
+     * @param  Closure(ProcessResult): void|null  $onFailure
      * @return bool Whether every command completed successfully.
      */
-    public function runSync(?Closure $onOutput = null): bool
+    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null): bool
     {
         return $this->commands()
             ->map(fn (RsyncCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
-            ->every(fn (ProcessResult $result) => $result->successful());
+            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->every(fn (bool $success) => $success);
+    }
+
+    /**
+     * Called from a `map()`, never straight from `every()` — `every()` short-circuits on
+     * the first `false`, which would skip `$onFailure` for every failure after the first.
+     */
+    private function reportSuccess(ProcessResult $result, ?Closure $onFailure): bool
+    {
+        if (! $result->successful() && $onFailure instanceof Closure) {
+            $onFailure($result);
+        }
+
+        return $result->successful();
     }
 }
