@@ -2,9 +2,6 @@
 
 ## [Unreleased](https://github.com/vitamin2ag/laravel-sync/compare/v1.0.1...HEAD)
 
-- Fix `sync` and SSH doctor/connection checks failing outright against a remote whose host key isn't yet known, by accepting a first-seen host key (`StrictHostKeyChecking=accept-new`) while still rejecting a changed one
-- Fix a failed sync/backup process only showing a generic "Sync failed."/"Backup failed." message — the process's own error output is now printed when it wasn't already streamed live
-
 ## [v1.0.1](https://github.com/vitamin2ag/laravel-sync/compare/v1.0.0...v1.0.1) - 2026-08-25
 
 - Fix `sync` and SSH doctor/connection checks failing outright against a remote whose host key isn't yet known, by accepting a first-seen host key (`StrictHostKeyChecking=accept-new`) while still rejecting a changed one
