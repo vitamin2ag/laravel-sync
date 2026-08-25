@@ -12,8 +12,14 @@
 
 A git-like artisan command to easily sync files and folders between environments via `rsync`.
 
+Think `git push`/`git pull`, but for files that don't belong in your repository — user uploads,
+`.env` files, database dumps, anything you'd otherwise copy by hand with `scp` or an FTP client.
+You define named "recipes" of paths and named "remotes" (servers or other local folders) once in
+config, then push or pull them with one command, from anywhere.
+
 ## Contents
 
+- [Concepts](#concepts)
 - [Quick Start](#quick-start)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -36,6 +42,34 @@ A git-like artisan command to easily sync files and folders between environments
 - [Security Vulnerabilities](#security-vulnerabilities)
 - [Credits](#credits)
 - [License](#license)
+
+## Concepts
+
+A few terms used throughout this README:
+
+- **Remote** — one environment you sync with: a real server (has `user` + `host`) or another local
+  folder on the same machine (omit both — no `ssh` involved).
+- **Recipe** — a named group of paths, relative to your project's root, that belong together (e.g.
+  `'assets' => ['storage/app/assets/']`).
+- **Push** — copy files from your local machine *to* a remote.
+- **Pull** — copy files *from* a remote *to* your local machine. **This overwrites local files** —
+  see [Safety Net](#safety-net) below.
+- **Root** — the absolute path to a remote's project folder; every recipe path is resolved relative
+  to it.
+- **Dry run** (`--dry`) — connects and reports exactly what would change, without writing anything.
+
+### Safety Net
+
+Because a pull can overwrite local files, Laravel Sync leans on a few guardrails so a mistake is
+hard to make and easy to undo:
+
+- **Confirmation prompt** before any real (non-dry) sync when running interactively.
+- **`--dry`** to preview exactly what would happen first, with no risk.
+- **`read_only` remotes** refuse a `push`, so you can't accidentally overwrite production.
+- **`--backup`** snapshots the local files a pull is about to overwrite, so you can restore them
+  with `sync:backups-restore` if the pull wasn't what you wanted.
+- **Concurrency lock** stops two syncs against the same remote from racing each other.
+- **`sync:doctor`** checks rsync and SSH are actually ready *before* you rely on any of the above.
 
 ## Quick Start
 
@@ -78,8 +112,13 @@ Every config key is explained below in [Configuration](#configuration), and ever
 
 ## Requirements
 
-- `rsync` on both your local machine and the remote host
-- A working `ssh` setup between your local machine and the remote host (agent or `~/.ssh/config`)
+- `rsync` on both your local machine and the remote host — run `rsync --version` on each to check;
+  most macOS/Linux machines and servers already have it.
+- A working `ssh` setup between your local machine and the remote host (agent or `~/.ssh/config`) —
+  if `ssh user@host` already logs you in without a password prompt, you're set.
+
+Not syncing with a real server (just two folders on the same machine)? Skip both — see
+[Remotes](#remotes).
 
 ## Installation
 
@@ -234,17 +273,18 @@ php artisan sync {push|pull} {remote} {recipe...} [options]
 | `sync:test-connection` | Test the SSH connection (and root path) for a remote. |
 | `sync:doctor` | Check that rsync and SSH access are ready for a real sync. |
 
+Options shared across most commands:
+
 | Option | Description |
 | --- | --- |
 | `-O`, `--option=*` | Override the default rsync options. Repeatable. |
 | `-D`, `--dry` | Perform a dry run, with real-time output. On `sync:backups-clean`, preview which backups would be deleted. On `sync:backups-restore`, preview what would be restored. |
 | `-A`, `--all` | Sync every configured recipe. On `sync:backups-clean`, delete every backup. On `sync:doctor`, check every configured remote. |
 | `-B`, `--backup` | Back up local files to `backup_dir` before a real pull. |
-| `-F`, `--force` | `sync:backups-clean` and `sync:backups-restore` only. Skip the confirmation prompt. |
-| `-K`, `--keep=` | `sync:backups-clean` only. Keep the N newest backups, deleting the rest. |
-| `-M`, `--mirror` | `sync:backups-restore` only. Also delete files on the project root that the backup doesn't have, mirroring it exactly. |
-| `--older-than=` | `sync:backups-clean` only. Delete backups older than N days. |
 | `-v` | Show real-time output while syncing (progress, stats, ...). |
+
+`sync:backups-clean` and `sync:backups-restore` each take a couple more options of their own — see
+[Cleaning Up Backups](#cleaning-up-backups) and [Restoring Backups](#restoring-backups) below.
 
 Any argument you omit is prompted for interactively (operation, remote, recipes, and rsync options), unless
 you pass `--no-interaction`, in which case a missing required value fails fast with a clear error instead of
@@ -264,14 +304,14 @@ you're pulling interactively, you're asked whether to back up before you're aske
 `sync:backups-clean` deletes timestamped folders under `backup_dir`, leaving `backup_dir` itself (and
 anything in it that isn't a timestamped backup folder) untouched. Run it without options to pick backups
 from an interactive list (with size and age), or pass `--all` to select every one. Add `--dry` to preview
-what would be deleted without deleting anything, and `--force` to skip the confirmation prompt.
+what would be deleted without deleting anything, and `-F`/`--force` to skip the confirmation prompt.
 
 Running it with `--no-interaction` and without `--all` or a retention option fails fast with a friendly error
 instead of deleting anything — there's no picker to fall back to, and deleting every backup by default would
 be surprising. The confirmation prompt only appears when running interactively, so `--no-interaction --all`
 (e.g. in a cron job) deletes immediately without needing `--force`.
 
-Pass `--keep=N` and/or `--older-than=N` (days) to select backups by retention criteria instead of picking or
+Pass `-K`/`--keep=N` and/or `--older-than=N` (days) to select backups by retention criteria instead of picking or
 `--all` — the only selection method that works non-interactively without `--all`, making it the one to use in
 a cron job. `--keep=N` deletes everything but the N newest; `--older-than=N` deletes anything older than N
 days; combined, `--older-than` picks the candidates and `--keep` still protects the N newest among them, even
@@ -284,11 +324,11 @@ everything instead of nothing.
 
 `sync:backups-restore` copies a backup folder's contents back onto your project root, undoing a backed-up
 pull. Pass the backup's name (`{backup}` argument) or omit it to pick one from an interactive list; add
-`--dry` to preview what would be restored (with real-time output) without touching anything, and `--force`
+`--dry` to preview what would be restored (with real-time output) without touching anything, and `-F`/`--force`
 to skip the confirmation prompt.
 
 By default it only overwrites files the backup actually captured — it doesn't delete anything created since
-the backup was taken. Add `--mirror` for a 1:1 restore instead, adding rsync's `--delete` so the project root
+the backup was taken. Add `-M`/`--mirror` for a 1:1 restore instead, adding rsync's `--delete` so the project root
 ends up exactly matching the backup, with anything not in it removed. Run `php artisan sync:backups-clean`
 afterwards if you also want to remove the backup you just restored.
 
