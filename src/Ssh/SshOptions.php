@@ -19,16 +19,22 @@ use Vitamin2\Sync\Data\Remote;
 final class SshOptions
 {
     /**
+     * Auto-trusts a host key seen for the first time (otherwise `BatchMode=yes` turns that
+     * known_hosts prompt into a hard failure) while still rejecting a host key that changed
+     * from what's already known. Shared with `RsyncCommand::sshFlag()` so the two independent
+     * ssh invocation paths in this package can't drift onto different host-key policies.
+     */
+    public const string ACCEPT_NEW_HOST_KEY = 'StrictHostKeyChecking=accept-new';
+
+    /**
      * Fail fast instead of hanging: `BatchMode=yes` disables interactive/password auth
      * entirely (agent/key auth only, matching how every other command in this package
      * connects), and `ConnectTimeout=5` bounds how long the initial handshake itself is
-     * allowed to take. `StrictHostKeyChecking=accept-new` auto-trusts a host key seen for
-     * the first time (otherwise `BatchMode=yes` turns that prompt into a hard failure) while
-     * still rejecting a host key that changed from what's already in `known_hosts`.
+     * allowed to take.
      *
      * @var list<string>
      */
-    public const array DEFAULT = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new'];
+    public const array DEFAULT = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', self::ACCEPT_NEW_HOST_KEY];
 
     /**
      * Bounds a whole check (an SSH round trip, or a plain local command run the same
