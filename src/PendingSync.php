@@ -179,7 +179,8 @@ final readonly class PendingSync
             ->map(fn (BackupCommand $command) => Process::forever()
                 ->path($command->workingDirectory())
                 ->run($command->toArgs(), $onOutput))
-            ->every(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure));
+            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->every(fn (bool $success) => $success);
     }
 
     /**
@@ -192,9 +193,14 @@ final readonly class PendingSync
     {
         return $this->commands()
             ->map(fn (RsyncCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
-            ->every(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure));
+            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->every(fn (bool $success) => $success);
     }
 
+    /**
+     * Called from a `map()`, never straight from `every()` — `every()` short-circuits on
+     * the first `false`, which would skip `$onFailure` for every failure after the first.
+     */
     private function reportSuccess(ProcessResult $result, ?Closure $onFailure): bool
     {
         if (! $result->successful() && $onFailure instanceof Closure) {

@@ -104,10 +104,10 @@ class SyncCommand extends Command
      */
     private function reportProcessFailure(ProcessResult $result): void
     {
-        $output = trim($result->errorOutput()) !== '' ? $result->errorOutput() : $result->output();
+        $output = ($errorOutput = trim($result->errorOutput())) !== '' ? $errorOutput : trim($result->output());
 
-        if (trim($output) !== '') {
-            $this->line(trim($output));
+        if ($output !== '') {
+            $this->line($output);
         }
     }
 
