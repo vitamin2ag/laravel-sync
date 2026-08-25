@@ -81,9 +81,12 @@ final readonly class RsyncCommand implements Arrayable, Stringable
 
     /**
      * The `ssh` command rsync's `-e` flag runs, carrying the remote's port.
+     * `StrictHostKeyChecking=accept-new` auto-trusts a host key seen for the first time
+     * instead of rsync failing outright on the interactive known_hosts prompt it can't
+     * answer, while still rejecting a host key that changed from what's already known.
      */
     private function sshFlag(): string
     {
-        return "ssh -p {$this->remote->port}";
+        return "ssh -p {$this->remote->port} -o StrictHostKeyChecking=accept-new";
     }
 }

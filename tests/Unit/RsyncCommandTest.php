@@ -21,7 +21,7 @@ it('builds a push command from the local path to the remote path', function () {
     expect($command->origin())->toBe(base_path('storage/app/assets/'))
         ->and($command->target())->toBe('forge@104.26.3.113:/home/forge/example.com/storage/app/assets/')
         ->and((string) $command)->toBe(sprintf(
-            "rsync -e 'ssh -p 22' --archive %s forge@104.26.3.113:/home/forge/example.com/storage/app/assets/",
+            "rsync -e 'ssh -p 22 -o StrictHostKeyChecking=accept-new' --archive %s forge@104.26.3.113:/home/forge/example.com/storage/app/assets/",
             base_path('storage/app/assets/'),
         ));
 });
@@ -32,7 +32,7 @@ it('builds a pull command from the remote path to the local path', function () {
     expect($command->origin())->toBe('forge@104.26.3.113:/home/forge/example.com/storage/app/assets/')
         ->and($command->target())->toBe(base_path('storage/app/assets/'))
         ->and((string) $command)->toBe(sprintf(
-            "rsync -e 'ssh -p 22' --archive forge@104.26.3.113:/home/forge/example.com/storage/app/assets/ %s",
+            "rsync -e 'ssh -p 22 -o StrictHostKeyChecking=accept-new' --archive forge@104.26.3.113:/home/forge/example.com/storage/app/assets/ %s",
             base_path('storage/app/assets/'),
         ));
 });
@@ -78,7 +78,7 @@ it('builds an argument list without shell interpretation of paths or options', f
     expect($command->toArgs())->toBe([
         'rsync',
         '-e',
-        'ssh -p 22',
+        'ssh -p 22 -o StrictHostKeyChecking=accept-new',
         '--archive',
         base_path('storage/app/assets/'),
         'forge@104.26.3.113:/home/forge/example.com/storage/app/assets/',
