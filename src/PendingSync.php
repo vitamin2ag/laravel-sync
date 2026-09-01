@@ -187,26 +187,34 @@ final readonly class PendingSync
      * Run every rsync command, one process at a time.
      *
      * @param  Closure(ProcessResult): void|null  $onFailure
+     * @param  Closure(RsyncCommand): void|null  $onSuccess  Called with each command that
+     *                                                       succeeds, so a caller can report
+     *                                                       progress as multi-recipe syncs run.
      * @return bool Whether every command completed successfully.
      */
-    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null): bool
+    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onSuccess = null): bool
     {
         return $this->commands()
-            ->map(fn (RsyncCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
-            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->map(fn (RsyncCommand $command) => [$command, Process::forever()->run($command->toArgs(), $onOutput)])
+            ->map(fn (array $pair) => $this->reportSuccess($pair[1], $onFailure, fn () => $onSuccess?->__invoke($pair[0])))
             ->every(fn (bool $success) => $success);
     }
 
     /**
      * Called from a `map()`, never straight from `every()` — `every()` short-circuits on
-     * the first `false`, which would skip `$onFailure` for every failure after the first.
+     * the first `false`, which would skip `$onFailure`/`$onSuccess` for every result after
+     * the first.
      */
-    private function reportSuccess(ProcessResult $result, ?Closure $onFailure): bool
+    private function reportSuccess(ProcessResult $result, ?Closure $onFailure, ?Closure $onSuccess = null): bool
     {
-        if (! $result->successful() && $onFailure instanceof Closure) {
-            $onFailure($result);
+        if (! $result->successful()) {
+            $onFailure?->__invoke($result);
+
+            return false;
         }
 
-        return $result->successful();
+        $onSuccess?->__invoke();
+
+        return true;
     }
 }

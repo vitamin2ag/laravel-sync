@@ -13,6 +13,7 @@ use Vitamin2\Sync\Data\Recipe;
 use Vitamin2\Sync\Enums\Operation;
 use Vitamin2\Sync\Exceptions\SyncException;
 use Vitamin2\Sync\PendingSync;
+use Vitamin2\Sync\Rsync\RsyncCommand;
 
 use function Laravel\Prompts\confirm;
 
@@ -79,7 +80,12 @@ class SyncCommand extends Command
             }
         }
 
-        if (! $pending->runSync($onOutput, $onFailure)) {
+        $commands = $pending->commands();
+        $onSuccess = $commands->count() > 1
+            ? fn (RsyncCommand $command) => $this->info("{$command->path} synced successfully.")
+            : null;
+
+        if (! $pending->runSync($onOutput, $onFailure, $onSuccess)) {
             $this->error($dry ? 'Dry run failed.' : 'Sync failed.');
 
             return self::FAILURE;

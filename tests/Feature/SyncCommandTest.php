@@ -47,6 +47,21 @@ it('runs a real sync without confirmation when not interactive', function () {
     Process::assertRanTimes(fn ($process) => true, 1);
 });
 
+it('prints a per-path progress line while syncing multiple recipes', function () {
+    $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', '--all' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('storage/app/assets/ synced successfully.')
+        ->expectsOutputToContain('.env synced successfully.')
+        ->assertSuccessful();
+});
+
+it('does not print a per-path progress line when only one recipe path is synced', function () {
+    $this->artisan('sync', [
+        'operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true,
+    ])
+        ->doesntExpectOutputToContain('storage/app/assets/ synced successfully.')
+        ->assertSuccessful();
+});
+
 it('falls back to config default options when --option is passed an empty string', function () {
     $this->artisan('sync', [
         'operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--option' => [''], '--no-interaction' => true,
