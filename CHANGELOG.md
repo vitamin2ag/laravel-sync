@@ -1,6 +1,17 @@
 # Release Notes
 
-## [Unreleased](https://github.com/vitamin2ag/laravel-sync/compare/v1.1.0...HEAD)
+## [Unreleased](https://github.com/vitamin2ag/laravel-sync/compare/v1.2.0...HEAD)
+
+## [v1.2.0](https://github.com/vitamin2ag/laravel-sync/compare/v1.1.0...v1.2.0) - 2026-09-01
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+### What's Changed
+
+#### Enhancements
+
+* Print per-path progress while syncing multiple recipes by @marcorieser in https://github.com/vitamin2ag/laravel-sync/pull/25
+
+**Full Changelog**: https://github.com/vitamin2ag/laravel-sync/compare/v1.1.0...v1.2.0
 
 ## [v1.1.0](https://github.com/vitamin2ag/laravel-sync/compare/v1.0.1...v1.1.0) - 2026-09-01
 
