@@ -187,12 +187,10 @@ final readonly class PendingSync
      * Run every rsync command, one process at a time.
      *
      * @param  Closure(ProcessResult): void|null  $onFailure  See `runBackup()`'s `$onFailure`.
-     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Called with every command and
-     *                                                             whether it succeeded, so a
-     *                                                             caller can report progress as
-     *                                                             multi-recipe syncs run — unlike
-     *                                                             `$onFailure`, fires regardless
-     *                                                             of whether output was streamed.
+     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Lets a caller report per-path
+     *                                                             progress — unlike `$onFailure`,
+     *                                                             fires regardless of whether
+     *                                                             output was streamed.
      * @return bool Whether every command completed successfully.
      */
     public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onCommand = null): bool

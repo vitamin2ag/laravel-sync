@@ -85,10 +85,9 @@ class SyncCommand extends Command
         $outcomes = [];
         $onCommand = $showPerPathProgress ? function (RsyncCommand $command, bool $success) use (&$outcomes, $dry) {
             $outcomes[$command->path] = $success;
+            $message = $this->pathOutcomeMessage($command->path, $dry, $success);
 
-            $success
-                ? $this->info($dry ? "{$command->path} dry run completed successfully." : "{$command->path} synced successfully.")
-                : $this->error($dry ? "{$command->path} dry run failed." : "{$command->path} sync failed.");
+            $success ? $this->info($message) : $this->error($message);
         } : null;
 
         if (! $pending->runSync($onOutput, $onFailure, $onCommand)) {
@@ -101,6 +100,16 @@ class SyncCommand extends Command
         $this->info($dry ? 'Dry run completed successfully.' : 'Sync completed successfully.');
 
         return self::SUCCESS;
+    }
+
+    private function pathOutcomeMessage(string $path, bool $dry, bool $success): string
+    {
+        return match (true) {
+            $success && $dry => "{$path} dry run completed successfully.",
+            $success => "{$path} synced successfully.",
+            $dry => "{$path} dry run failed.",
+            default => "{$path} sync failed.",
+        };
     }
 
     /**
