@@ -2,6 +2,8 @@
 
 ## [Unreleased](https://github.com/vitamin2ag/laravel-sync/compare/v1.0.1...HEAD)
 
+- Add `--whole-file` to the selectable rsync options: skips delta-transfer checksums, a workaround for rsync's checksum algorithm deadlocking over some SSH channels
+
 ## [v1.0.1](https://github.com/vitamin2ag/laravel-sync/compare/v1.0.0...v1.0.1) - 2026-08-25
 
 - Fix `sync` and SSH doctor/connection checks failing outright against a remote whose host key isn't yet known, by accepting a first-seen host key (`StrictHostKeyChecking=accept-new`) while still rejecting a changed one
