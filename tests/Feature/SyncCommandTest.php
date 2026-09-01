@@ -54,6 +54,16 @@ it('prints a per-path progress line while syncing multiple recipes', function ()
         ->assertSuccessful();
 });
 
+it('labels per-path progress lines as a dry run during a dry sync', function () {
+    $this->artisan('sync', [
+        'operation' => 'push', 'remote' => 'staging', '--all' => true, '--dry' => true, '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('storage/app/assets/ dry run completed successfully.')
+        ->expectsOutputToContain('.env dry run completed successfully.')
+        ->doesntExpectOutputToContain('storage/app/assets/ synced successfully.')
+        ->assertSuccessful();
+});
+
 it('does not print a per-path progress line when only one recipe path is synced', function () {
     $this->artisan('sync', [
         'operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--no-interaction' => true,

@@ -82,17 +82,23 @@ class SyncCommand extends Command
 
         $showPerPathProgress = $pending->commands()->count() > 1;
         $outcomes = [];
-        $onCommand = $showPerPathProgress ? function (RsyncCommand $command, bool $success) use (&$outcomes) {
+        $succeededCount = 0;
+        $onCommand = $showPerPathProgress ? function (RsyncCommand $command, bool $success) use (&$outcomes, &$succeededCount, $dry) {
             $outcomes[$command->path] = $success;
 
-            $success
-                ? $this->info("{$command->path} synced successfully.")
-                : $this->error("{$command->path} sync failed.");
+            if ($success) {
+                $succeededCount++;
+                $this->info($dry ? "{$command->path} dry run completed successfully." : "{$command->path} synced successfully.");
+
+                return;
+            }
+
+            $this->error($dry ? "{$command->path} dry run failed." : "{$command->path} sync failed.");
         } : null;
 
         if (! $pending->runSync($onOutput, $onFailure, $onCommand)) {
             $this->error($dry ? 'Dry run failed.' : 'Sync failed.');
-            $this->reportMixedOutcome($outcomes);
+            $this->reportMixedOutcome($outcomes, $succeededCount);
 
             return self::FAILURE;
         }
@@ -107,15 +113,16 @@ class SyncCommand extends Command
      * an all-success or all-failure run is already fully said by the closing line above, and
      * the per-path lines already printed live while it ran.
      *
+     * Only ever called after a failed run, so `$succeeded === 0` is the "all failed" case;
+     * there's no need to also check for "all succeeded" here.
+     *
      * @param  array<string, bool>  $outcomes
      */
-    private function reportMixedOutcome(array $outcomes): void
+    private function reportMixedOutcome(array $outcomes, int $succeeded): void
     {
-        if (count(array_unique($outcomes, SORT_REGULAR)) < 2) {
+        if ($succeeded === 0) {
             return;
         }
-
-        $succeeded = count(array_filter($outcomes));
 
         $this->newLine();
         $this->line(sprintf('%d of %d succeeded:', $succeeded, count($outcomes)));

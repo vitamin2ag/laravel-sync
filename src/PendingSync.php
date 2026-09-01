@@ -186,29 +186,22 @@ final readonly class PendingSync
     /**
      * Run every rsync command, one process at a time.
      *
-     * @param  Closure(ProcessResult): void|null  $onFailure  Called with each failed process's
-     *                                                        own result — a command's raw output
-     *                                                        isn't otherwise surfaced unless
-     *                                                        `$onOutput` already streamed it.
-     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Called with every command
-     *                                                             and whether it succeeded, so
-     *                                                             a caller can report progress
-     *                                                             as multi-recipe syncs run —
-     *                                                             independent of `$onFailure`,
-     *                                                             which only fires when output
-     *                                                             wasn't already streamed live.
+     * @param  Closure(ProcessResult): void|null  $onFailure  See `runBackup()`'s `$onFailure`.
+     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Called with every command and
+     *                                                             whether it succeeded, so a
+     *                                                             caller can report progress as
+     *                                                             multi-recipe syncs run — unlike
+     *                                                             `$onFailure`, fires regardless
+     *                                                             of whether output was streamed.
      * @return bool Whether every command completed successfully.
      */
     public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onCommand = null): bool
     {
         return $this->commands()
-            ->map(fn (RsyncCommand $command) => [
-                'command' => $command,
-                'result' => Process::forever()->run($command->toArgs(), $onOutput),
-            ])
-            ->map(function (array $run) use ($onFailure, $onCommand) {
-                $success = $this->reportSuccess($run['result'], $onFailure);
-                $onCommand?->__invoke($run['command'], $success);
+            ->map(function (RsyncCommand $command) use ($onOutput, $onFailure, $onCommand) {
+                $result = Process::forever()->run($command->toArgs(), $onOutput);
+                $success = $this->reportSuccess($result, $onFailure);
+                $onCommand?->__invoke($command, $success);
 
                 return $success;
             })
