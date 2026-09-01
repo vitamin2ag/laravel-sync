@@ -6,6 +6,7 @@ namespace Vitamin2\Sync\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Str;
 use Vitamin2\Sync\Commands\Concerns\ConfirmsUnlessSkipped;
 use Vitamin2\Sync\Commands\Concerns\ResolvesSyncInput;
 use Vitamin2\Sync\Data\Backup;
@@ -13,6 +14,7 @@ use Vitamin2\Sync\Data\Recipe;
 use Vitamin2\Sync\Enums\Operation;
 use Vitamin2\Sync\Exceptions\SyncException;
 use Vitamin2\Sync\PendingSync;
+use Vitamin2\Sync\Rsync\RsyncCommand;
 
 use function Laravel\Prompts\confirm;
 
@@ -79,8 +81,18 @@ class SyncCommand extends Command
             }
         }
 
-        if (! $pending->runSync($onOutput, $onFailure)) {
+        $showPerPathProgress = $pending->commands()->count() > 1;
+        $outcomes = [];
+        $onCommand = $showPerPathProgress ? function (RsyncCommand $command, bool $success) use (&$outcomes, $dry) {
+            $outcomes[$command->path] = $success;
+            $message = $this->pathOutcomeMessage($command->path, $dry, $success);
+
+            $success ? $this->info($message) : $this->error($message);
+        } : null;
+
+        if (! $pending->runSync($onOutput, $onFailure, $onCommand)) {
             $this->error($dry ? 'Dry run failed.' : 'Sync failed.');
+            $this->reportMixedOutcome($outcomes);
 
             return self::FAILURE;
         }
@@ -88,6 +100,40 @@ class SyncCommand extends Command
         $this->info($dry ? 'Dry run completed successfully.' : 'Sync completed successfully.');
 
         return self::SUCCESS;
+    }
+
+    private function pathOutcomeMessage(string $path, bool $dry, bool $success): string
+    {
+        return match (true) {
+            $success && $dry => "{$path} dry run completed successfully.",
+            $success => "{$path} synced successfully.",
+            $dry => "{$path} dry run failed.",
+            default => "{$path} sync failed.",
+        };
+    }
+
+    /**
+     * Name which paths failed, but only when some paths in the same run also succeeded — an
+     * all-failure run is already fully said by the closing line above and the per-path lines
+     * already printed live while it ran, so listing every failed path again would be noise.
+     *
+     * @param  array<string, bool>  $outcomes
+     */
+    private function reportMixedOutcome(array $outcomes): void
+    {
+        $failed = array_keys(array_filter($outcomes, fn (bool $success) => ! $success));
+
+        if (count($failed) === count($outcomes)) {
+            return;
+        }
+
+        $this->error(sprintf(
+            'Failed to sync %d of %d %s: %s.',
+            count($failed),
+            count($outcomes),
+            Str::plural('path', count($outcomes)),
+            implode(', ', array_map(fn (string $path) => "\"{$path}\"", $failed)),
+        ));
     }
 
     /**

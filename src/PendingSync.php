@@ -46,7 +46,7 @@ final readonly class PendingSync
      */
     public function commands(): Collection
     {
-        return $this->pathExcludes()
+        return once(fn () => $this->pathExcludes()
             ->map(fn (array $entry) => new RsyncCommand(
                 $this->operation,
                 $this->remote,
@@ -54,7 +54,7 @@ final readonly class PendingSync
                 $this->options
                     ->withExcludes($entry['excludes'])
                     ->withExcludeFrom(array_map(Sync::resolveExcludesFromPath(...), $entry['excludesFrom'])),
-            ));
+            )));
     }
 
     /**
@@ -186,14 +186,23 @@ final readonly class PendingSync
     /**
      * Run every rsync command, one process at a time.
      *
-     * @param  Closure(ProcessResult): void|null  $onFailure
+     * @param  Closure(ProcessResult): void|null  $onFailure  See `runBackup()`'s `$onFailure`.
+     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Lets a caller report per-path
+     *                                                             progress — unlike `$onFailure`,
+     *                                                             fires regardless of whether
+     *                                                             output was streamed.
      * @return bool Whether every command completed successfully.
      */
-    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null): bool
+    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onCommand = null): bool
     {
         return $this->commands()
-            ->map(fn (RsyncCommand $command) => Process::forever()->run($command->toArgs(), $onOutput))
-            ->map(fn (ProcessResult $result) => $this->reportSuccess($result, $onFailure))
+            ->map(function (RsyncCommand $command) use ($onOutput, $onFailure, $onCommand) {
+                $result = Process::forever()->run($command->toArgs(), $onOutput);
+                $success = $this->reportSuccess($result, $onFailure);
+                $onCommand?->__invoke($command, $success);
+
+                return $success;
+            })
             ->every(fn (bool $success) => $success);
     }
 
@@ -203,10 +212,12 @@ final readonly class PendingSync
      */
     private function reportSuccess(ProcessResult $result, ?Closure $onFailure): bool
     {
-        if (! $result->successful() && $onFailure instanceof Closure) {
-            $onFailure($result);
+        if (! $result->successful()) {
+            $onFailure?->__invoke($result);
+
+            return false;
         }
 
-        return $result->successful();
+        return true;
     }
 }
