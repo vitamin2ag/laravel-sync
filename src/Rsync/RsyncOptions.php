@@ -28,6 +28,7 @@ final readonly class RsyncOptions implements Stringable
         '--partial' => 'Keep partially transferred files',
         '--delete-after' => 'Delete files on the target after the transfer',
         '--checksum' => 'Skip based on checksum, not modification time & size',
+        '--whole-file' => 'Send whole files, skip delta-transfer checksum',
         '--copy-links' => 'Transform symlinks into the referent file/dir',
         '--no-perms' => 'Do not preserve permissions',
         '--no-owner' => 'Do not preserve owner',

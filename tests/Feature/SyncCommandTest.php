@@ -325,7 +325,7 @@ it('moves the configured default options to the front of the prompt, in AVAILABL
     $expectedOrder = [
         '--archive', '--verbose', '--delete', '--progress', '--compress', '--stats',
         '--human-readable', '--itemize-changes', '--update', '--partial', '--delete-after',
-        '--checksum', '--copy-links', '--no-perms', '--no-owner', '--no-group', '--backup',
+        '--checksum', '--whole-file', '--copy-links', '--no-perms', '--no-owner', '--no-group', '--backup',
     ];
     $expectedOptions = collect($expectedOrder)
         ->mapWithKeys(fn (string $flag) => [$flag => RsyncOptions::AVAILABLE[$flag]])
