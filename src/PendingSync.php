@@ -46,7 +46,7 @@ final readonly class PendingSync
      */
     public function commands(): Collection
     {
-        return $this->pathExcludes()
+        return once(fn () => $this->pathExcludes()
             ->map(fn (array $entry) => new RsyncCommand(
                 $this->operation,
                 $this->remote,
@@ -54,7 +54,7 @@ final readonly class PendingSync
                 $this->options
                     ->withExcludes($entry['excludes'])
                     ->withExcludeFrom(array_map(Sync::resolveExcludesFromPath(...), $entry['excludesFrom'])),
-            ));
+            )));
     }
 
     /**
@@ -195,8 +195,11 @@ final readonly class PendingSync
     public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onSuccess = null): bool
     {
         return $this->commands()
-            ->map(fn (RsyncCommand $command) => [$command, Process::forever()->run($command->toArgs(), $onOutput)])
-            ->map(fn (array $pair) => $this->reportSuccess($pair[1], $onFailure, fn () => $onSuccess?->__invoke($pair[0])))
+            ->map(fn (RsyncCommand $command) => [
+                'command' => $command,
+                'result' => Process::forever()->run($command->toArgs(), $onOutput),
+            ])
+            ->map(fn (array $run) => $this->reportSuccess($run['result'], $onFailure, fn () => $onSuccess?->__invoke($run['command'])))
             ->every(fn (bool $success) => $success);
     }
 
