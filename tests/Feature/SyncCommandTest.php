@@ -80,7 +80,7 @@ it('prints a per-path fail message and a mixed summary when some recipes fail an
     $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', '--all' => true, '--no-interaction' => true])
         ->expectsOutputToContain('storage/app/assets/ synced successfully.')
         ->expectsOutputToContain('.env sync failed.')
-        ->expectsOutputToContain('1 of 2 succeeded:')
+        ->expectsOutputToContain('Failed to sync 1 of 2 paths: ".env".')
         ->expectsOutputToContain('Sync failed.')
         ->assertFailed();
 });
@@ -91,7 +91,7 @@ it('does not print a mixed summary when every recipe fails', function () {
     $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', '--all' => true, '--no-interaction' => true])
         ->expectsOutputToContain('storage/app/assets/ sync failed.')
         ->expectsOutputToContain('.env sync failed.')
-        ->doesntExpectOutputToContain('of 2 succeeded:')
+        ->doesntExpectOutputToContain('Failed to sync')
         ->assertFailed();
 });
 
