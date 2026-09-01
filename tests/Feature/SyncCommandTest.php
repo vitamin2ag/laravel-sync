@@ -62,6 +62,41 @@ it('does not print a per-path progress line when only one recipe path is synced'
         ->assertSuccessful();
 });
 
+it('prints a per-path fail message and a mixed summary when some recipes fail and others succeed', function () {
+    Process::fake(fn ($process) => in_array(base_path('.env'), $process->command, true)
+        ? Process::result(exitCode: 1)
+        : Process::result());
+
+    $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', '--all' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('storage/app/assets/ synced successfully.')
+        ->expectsOutputToContain('.env sync failed.')
+        ->expectsOutputToContain('1 of 2 succeeded:')
+        ->expectsOutputToContain('Sync failed.')
+        ->assertFailed();
+});
+
+it('does not print a mixed summary when every recipe fails', function () {
+    Process::fake(fn () => Process::result(exitCode: 1));
+
+    $this->artisan('sync', ['operation' => 'push', 'remote' => 'staging', '--all' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('storage/app/assets/ sync failed.')
+        ->expectsOutputToContain('.env sync failed.')
+        ->doesntExpectOutputToContain('of 2 succeeded:')
+        ->assertFailed();
+});
+
+it('prints a per-path fail message even when rsync output is already streaming live', function () {
+    Process::fake(fn ($process) => in_array(base_path('.env'), $process->command, true)
+        ? Process::result(exitCode: 1)
+        : Process::result());
+
+    $this->artisan('sync', [
+        'operation' => 'push', 'remote' => 'staging', '--all' => true, '-v' => true, '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('.env sync failed.')
+        ->assertFailed();
+});
+
 it('falls back to config default options when --option is passed an empty string', function () {
     $this->artisan('sync', [
         'operation' => 'push', 'remote' => 'staging', 'recipe' => ['assets'], '--option' => [''], '--no-interaction' => true,

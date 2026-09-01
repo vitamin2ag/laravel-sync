@@ -80,13 +80,19 @@ class SyncCommand extends Command
             }
         }
 
-        $commands = $pending->commands();
-        $onSuccess = $commands->count() > 1
-            ? fn (RsyncCommand $command) => $this->info("{$command->path} synced successfully.")
-            : null;
+        $showPerPathProgress = $pending->commands()->count() > 1;
+        $outcomes = [];
+        $onCommand = $showPerPathProgress ? function (RsyncCommand $command, bool $success) use (&$outcomes) {
+            $outcomes[$command->path] = $success;
 
-        if (! $pending->runSync($onOutput, $onFailure, $onSuccess)) {
+            $success
+                ? $this->info("{$command->path} synced successfully.")
+                : $this->error("{$command->path} sync failed.");
+        } : null;
+
+        if (! $pending->runSync($onOutput, $onFailure, $onCommand)) {
             $this->error($dry ? 'Dry run failed.' : 'Sync failed.');
+            $this->reportMixedOutcome($outcomes);
 
             return self::FAILURE;
         }
@@ -94,6 +100,29 @@ class SyncCommand extends Command
         $this->info($dry ? 'Dry run completed successfully.' : 'Sync completed successfully.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Break down which paths succeeded and which failed, but only when the run was mixed —
+     * an all-success or all-failure run is already fully said by the closing line above, and
+     * the per-path lines already printed live while it ran.
+     *
+     * @param  array<string, bool>  $outcomes
+     */
+    private function reportMixedOutcome(array $outcomes): void
+    {
+        if (count(array_unique($outcomes, SORT_REGULAR)) < 2) {
+            return;
+        }
+
+        $succeeded = count(array_filter($outcomes));
+
+        $this->newLine();
+        $this->line(sprintf('%d of %d succeeded:', $succeeded, count($outcomes)));
+
+        foreach ($outcomes as $path => $success) {
+            $this->line($success ? "  <fg=green>✓</> {$path}" : "  <fg=red>✗</> {$path}");
+        }
     }
 
     /**

@@ -186,37 +186,46 @@ final readonly class PendingSync
     /**
      * Run every rsync command, one process at a time.
      *
-     * @param  Closure(ProcessResult): void|null  $onFailure
-     * @param  Closure(RsyncCommand): void|null  $onSuccess  Called with each command that
-     *                                                       succeeds, so a caller can report
-     *                                                       progress as multi-recipe syncs run.
+     * @param  Closure(ProcessResult): void|null  $onFailure  Called with each failed process's
+     *                                                        own result — a command's raw output
+     *                                                        isn't otherwise surfaced unless
+     *                                                        `$onOutput` already streamed it.
+     * @param  Closure(RsyncCommand, bool): void|null  $onCommand  Called with every command
+     *                                                             and whether it succeeded, so
+     *                                                             a caller can report progress
+     *                                                             as multi-recipe syncs run —
+     *                                                             independent of `$onFailure`,
+     *                                                             which only fires when output
+     *                                                             wasn't already streamed live.
      * @return bool Whether every command completed successfully.
      */
-    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onSuccess = null): bool
+    public function runSync(?Closure $onOutput = null, ?Closure $onFailure = null, ?Closure $onCommand = null): bool
     {
         return $this->commands()
             ->map(fn (RsyncCommand $command) => [
                 'command' => $command,
                 'result' => Process::forever()->run($command->toArgs(), $onOutput),
             ])
-            ->map(fn (array $run) => $this->reportSuccess($run['result'], $onFailure, fn () => $onSuccess?->__invoke($run['command'])))
+            ->map(function (array $run) use ($onFailure, $onCommand) {
+                $success = $this->reportSuccess($run['result'], $onFailure);
+                $onCommand?->__invoke($run['command'], $success);
+
+                return $success;
+            })
             ->every(fn (bool $success) => $success);
     }
 
     /**
      * Called from a `map()`, never straight from `every()` — `every()` short-circuits on
-     * the first `false`, which would skip `$onFailure`/`$onSuccess` for every result after
-     * the first.
+     * the first `false`, which would skip `$onFailure` for every failure after the first.
      */
-    private function reportSuccess(ProcessResult $result, ?Closure $onFailure, ?Closure $onSuccess = null): bool
+    private function reportSuccess(ProcessResult $result, ?Closure $onFailure): bool
     {
         if (! $result->successful()) {
             $onFailure?->__invoke($result);
 
             return false;
         }
-
-        $onSuccess?->__invoke();
 
         return true;
     }

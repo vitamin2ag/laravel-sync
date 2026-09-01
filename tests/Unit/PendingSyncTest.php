@@ -318,7 +318,7 @@ it('runs only the backup via runBackup()', function () {
     Process::assertRan(fn ($process) => in_array('--relative', $process->command, true));
 });
 
-it('calls onSuccess with each succeeded command, but not for failed ones', function () {
+it('calls onCommand with every command and whether it succeeded', function () {
     Process::fake(fn ($process) => in_array(base_path('storage/app/img/'), $process->command, true)
         ? Process::result(exitCode: 1)
         : Process::result());
@@ -326,12 +326,15 @@ it('calls onSuccess with each succeeded command, but not for failed ones', funct
     $recipes = collect([new Recipe('assets', ['storage/app/assets/', 'storage/app/img/'])]);
     $pending = new PendingSync(Operation::Push, $this->remote, $recipes, new RsyncOptions(['--archive']));
 
-    $succeeded = [];
-    $pending->runSync(onSuccess: function ($command) use (&$succeeded) {
-        $succeeded[] = $command->path;
+    $outcomes = [];
+    $pending->runSync(onCommand: function ($command, $success) use (&$outcomes) {
+        $outcomes[$command->path] = $success;
     });
 
-    expect($succeeded)->toBe(['storage/app/assets/']);
+    expect($outcomes)->toBe([
+        'storage/app/assets/' => true,
+        'storage/app/img/' => false,
+    ]);
 });
 
 it('runs only the sync via runSync(), without backing up', function () {
