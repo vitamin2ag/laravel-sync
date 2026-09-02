@@ -21,6 +21,25 @@ Add package features in the right place and wire them through the service provid
 5. Use `package-testing` for coverage, update README or contributing documentation when user-facing behavior changes, use `package-compatibility` for matrix-sensitive changes, and use `package-release` for release tasks.
 6. Add only the files needed for the requested capability and validate with the narrowest relevant command before broader checks.
 
+## Config Files
+
+Each config key gets a boxed headline comment, matching `laravel/laravel`'s `config/app.php`:
+
+```php
+    /*
+    |--------------------------------------------------------------------------
+    | Key Name
+    |--------------------------------------------------------------------------
+    |
+    | Description of the key, wrapped near 80 chars.
+    |
+    */
+
+    'key' => 'value',
+```
+
+`config/sync.php` is the reference — match its header style for any new or edited config key.
+
 ## Provider Wiring
 
 1. Keep provider wiring in `register()` or `boot()` unless extracting a method makes a real repeated concern clearer.
